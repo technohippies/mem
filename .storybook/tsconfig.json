@@ -1,0 +1,14 @@
+{
+    "extends": "../tsconfig.json",
+    "compilerOptions": {
+        "jsx": "react-jsx",
+        "esModuleInterop": true,
+        "moduleResolution": "node"
+    },
+    "include": [
+        "../src/**/*.stories.tsx",
+        "../src/**/*.stories.ts",
+        "../src/**/*.tsx",
+        "../src/**/*.ts"
+    ]
+}
