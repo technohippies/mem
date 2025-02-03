@@ -6,6 +6,7 @@ Core Stack
 - TailwindCSS + Shadcn/UI for styling
 - Bun for package management
 - Storybook to ensure each component is modular and standalone
+-
 
 Database Architecture (v0)
 

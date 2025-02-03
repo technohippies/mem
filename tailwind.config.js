@@ -70,6 +70,37 @@ export const theme = {
       "accordion-down": "accordion-down 0.2s ease-out",
       "accordion-up": "accordion-up 0.2s ease-out",
     },
+    transformStyle: {
+      'preserve-3d': 'preserve-3d',
+    },
+    backfaceVisibility: {
+      'hidden': 'hidden',
+    },
+    perspective: {
+      'none': 'none',
+      '1000': '1000px',
+    },
+    rotate: {
+      'y-180': 'rotateY(180deg)',
+    },
   },
 };
-export const plugins = [require("tailwindcss-animate")]; 
+export const plugins = [
+  require("tailwindcss-animate"),
+  function({ addUtilities }) {
+    addUtilities({
+      '.preserve-3d': {
+        'transform-style': 'preserve-3d',
+      },
+      '.backface-hidden': {
+        'backface-visibility': 'hidden',
+      },
+      '.perspective-1000': {
+        'perspective': '1000px',
+      },
+      '.rotate-y-180': {
+        'transform': 'rotateY(180deg)',
+      },
+    });
+  },
+]; 
