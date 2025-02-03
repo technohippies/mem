@@ -81,22 +81,33 @@ export const DeckPage = () => {
     <div className="flex flex-col min-h-screen">
       {/* Deck Info */}
       <div className="flex flex-col gap-4 p-4">
-        <h1 className="text-2xl font-bold">{deck.name}</h1>
-        {deck.description && (
-          <p className="text-gray-600">{deck.description}</p>
-        )}
-        {deck.tags && (
-          <div className="flex flex-wrap gap-2">
-            {JSON.parse(deck.tags).map((tag: string) => (
-              <span 
-                key={tag}
-                className="px-2 py-1 text-xs bg-gray-100 rounded-full"
-              >
-                {tag}
-              </span>
-            ))}
+        <div className="flex gap-4 items-start">
+          {deck.image_hash && (
+            <img 
+              src={deck.image_hash} 
+              alt={deck.name}
+              className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
+            />
+          )}
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl font-bold">{deck.name}</h1>
+            {deck.description && (
+              <p className="text-gray-600">{deck.description}</p>
+            )}
+            {deck.tags && (
+              <div className="flex flex-wrap gap-2">
+                {JSON.parse(deck.tags).map((tag: string) => (
+                  <span 
+                    key={tag}
+                    className="px-2 py-1 text-xs bg-gray-100 rounded-full"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {/* Cards List */}

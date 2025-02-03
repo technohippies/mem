@@ -78,24 +78,33 @@ export const HomePage = () => {
           >
             <Button 
               variant="outline" 
-              className="w-full justify-start p-4 h-auto flex flex-col items-start gap-2"
+              className="w-full justify-start p-4 h-auto flex gap-4 items-start"
             >
-              <span className="font-semibold">{deck.name}</span>
-              {deck.description && (
-                <span className="text-sm text-gray-600">{deck.description}</span>
+              {deck.image_hash && (
+                <img 
+                  src={deck.image_hash} 
+                  alt={deck.name}
+                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                />
               )}
-              {deck.tags && (
-                <div className="flex flex-wrap gap-2">
-                  {JSON.parse(deck.tags).map((tag: string) => (
-                    <span 
-                      key={tag}
-                      className="px-2 py-1 text-xs bg-gray-100 rounded-full"
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-col gap-2">
+                <span className="font-semibold">{deck.name}</span>
+                {deck.description && (
+                  <span className="text-sm text-gray-600">{deck.description}</span>
+                )}
+                {deck.tags && (
+                  <div className="flex flex-wrap gap-2">
+                    {JSON.parse(deck.tags).map((tag: string) => (
+                      <span 
+                        key={tag}
+                        className="px-2 py-1 text-xs bg-gray-100 rounded-full"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </Button>
           </Link>
         ))}
