@@ -1,120 +1,83 @@
 import sqlite3 from 'sqlite3';
+import path from 'path';
 import { promisify } from 'util';
-import { sql } from 'drizzle-orm';
-import * as schema from './schema';
 
-// Initialize SQLite database
-const db = new sqlite3.Database('anki.db');
+// Initialize database connection
+const db = new sqlite3.Database(path.join(process.cwd(), 'flashcards.db'));
 
 // Enable foreign keys
 db.run('PRAGMA foreign_keys = ON');
 
 // Promisify database operations
-const runAsync = promisify(db.run.bind(db));
-const allAsync = promisify(db.all.bind(db));
-const getAsync = promisify(db.get.bind(db));
-
-// Helper function to initialize the database
-export async function initializeDatabase() {
-  // Create tables if they don't exist
-  const createTableStatements = [
-    `CREATE TABLE IF NOT EXISTS decks (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      creator_id TEXT NOT NULL,
-      is_public INTEGER DEFAULT 0,
-      tags TEXT,
-      image_hash TEXT,
-      forked_from TEXT REFERENCES decks(id),
-      version INTEGER DEFAULT 1,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`,
-    
-    `CREATE TABLE IF NOT EXISTS flashcards (
-      id TEXT PRIMARY KEY,
-      deck_id TEXT NOT NULL REFERENCES decks(id),
-      front TEXT NOT NULL,
-      front_image_hash TEXT,
-      back TEXT NOT NULL,
-      back_image_hash TEXT,
-      sort_order INTEGER,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )`,
-    
-    `CREATE TABLE IF NOT EXISTS user_flashcards (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      flashcard_id TEXT NOT NULL REFERENCES flashcards(id),
-      difficulty REAL DEFAULT 0,
-      stability REAL DEFAULT 0,
-      retrievability REAL DEFAULT 0,
-      reps INTEGER DEFAULT 0,
-      lapses INTEGER DEFAULT 0,
-      last_review TIMESTAMP,
-      next_review TIMESTAMP,
-      correct_reps INTEGER DEFAULT 0,
-      last_interval REAL,
-      UNIQUE(user_id, flashcard_id)
-    )`,
-    
-    `CREATE TABLE IF NOT EXISTS deck_versions (
-      id TEXT PRIMARY KEY,
-      deck_id TEXT NOT NULL REFERENCES decks(id),
-      version INTEGER NOT NULL,
-      modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      modified_by TEXT NOT NULL,
-      change_type TEXT NOT NULL,
-      change_description TEXT
-    )`,
-    
-    `CREATE TABLE IF NOT EXISTS study_sessions (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL,
-      deck_id TEXT NOT NULL REFERENCES decks(id),
-      started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      ended_at TIMESTAMP,
-      cards_studied INTEGER DEFAULT 0,
-      correct_cards INTEGER DEFAULT 0
-    )`
-  ];
-
-  const createIndexStatements = [
-    'CREATE INDEX IF NOT EXISTS idx_flashcards_deck ON flashcards(deck_id)',
-    'CREATE INDEX IF NOT EXISTS idx_user_flashcards_user ON user_flashcards(user_id)',
-    'CREATE INDEX IF NOT EXISTS idx_user_flashcards_next_review ON user_flashcards(user_id, next_review)',
-    'CREATE INDEX IF NOT EXISTS idx_deck_versions_deck ON deck_versions(deck_id)',
-    'CREATE INDEX IF NOT EXISTS idx_study_sessions_user ON study_sessions(user_id)'
-  ];
-
-  // Create tables sequentially
-  for (const statement of createTableStatements) {
-    await runAsync(statement);
-  }
-
-  // Create indexes
-  for (const statement of createIndexStatements) {
-    await runAsync(statement);
-  }
-}
+const dbRun = promisify(db.run.bind(db));
+const dbGet = promisify(db.get.bind(db));
+const dbAll = promisify(db.all.bind(db));
+const dbExec = promisify(db.exec.bind(db));
 
 // Export database instance and helper functions
-export { db, runAsync, allAsync, getAsync };
+export { db, dbRun, dbGet, dbAll, dbExec };
 
-// Export types for use in the application
-export type Deck = typeof schema.decks.$inferSelect;
-export type NewDeck = typeof schema.decks.$inferInsert;
+// Types for the application
+export interface Deck {
+  id: string;
+  name: string;
+  slug: string;  // URL-friendly version of the name
+  description: string | null;
+  creator_id: string;
+  is_public: boolean;
+  tags: string | null;
+  image_hash: string | null;
+  forked_from: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
 
-export type Flashcard = typeof schema.flashcards.$inferSelect;
-export type NewFlashcard = typeof schema.flashcards.$inferInsert;
+export interface Flashcard {
+  id: string;
+  deck_id: string;
+  front: string;
+  front_image_hash: string | null;
+  back: string;
+  back_image_hash: string | null;
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string;
+}
 
-export type UserFlashcard = typeof schema.userFlashcards.$inferSelect;
-export type NewUserFlashcard = typeof schema.userFlashcards.$inferInsert;
+export interface UserFlashcard {
+  id: string;
+  user_id: string;
+  flashcard_id: string;
+  difficulty: number;
+  stability: number;
+  retrievability: number;
+  reps: number;
+  lapses: number;
+  last_review: string | null;
+  next_review: string | null;
+  correct_reps: number;
+  last_interval: number | null;
+}
 
-export type DeckVersion = typeof schema.deckVersions.$inferSelect;
-export type NewDeckVersion = typeof schema.deckVersions.$inferInsert;
+export interface DeckVersion {
+  id: string;
+  deck_id: string;
+  version: number;
+  modified_at: string;
+  modified_by: string;
+  change_type: string;
+  change_description: string | null;
+}
 
-export type StudySession = typeof schema.studySessions.$inferSelect;
-export type NewStudySession = typeof schema.studySessions.$inferInsert; 
+export interface StudySession {
+  id: string;
+  user_id: string;
+  deck_id: string;
+  started_at: string;
+  ended_at: string | null;
+  cards_studied: number;
+  correct_cards: number;
+}
+
+export default db; 

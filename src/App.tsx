@@ -1,15 +1,17 @@
-import { Brain } from '@phosphor-icons/react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HomePage } from '@/components/pages/HomePage';
+import { DeckPage } from '@/components/pages/DeckPage';
 
 function App() {
   return (
-    <div className="min-h-screen bg-background">
-      <main className="container mx-auto py-8">
-        <div className="flex items-center justify-center gap-4 text-4xl font-bold">
-          <Brain weight="duotone" className="h-12 w-12" />
-          <h1>Anki Farcaster</h1>
-        </div>
-      </main>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/decks/:slug" element={<DeckPage />} />
+        {/* TODO: Add study route once implemented */}
+        <Route path="/study/:slug" element={<div>Study page coming soon</div>} />
+      </Routes>
+    </BrowserRouter>
   );
 }
 
