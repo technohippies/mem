@@ -1,17 +1,19 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { HomePage } from '@/components/pages/HomePage';
 import { DeckPage } from '@/components/pages/DeckPage';
+import { StudyPage } from '@/components/pages/StudyPage';
+import { Toaster } from './components/ui/toast/Toaster';
 
 function App() {
   return (
-    <BrowserRouter>
+    <Router>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/decks/:slug" element={<DeckPage />} />
-        {/* TODO: Add study route once implemented */}
-        <Route path="/study/:slug" element={<div>Study page coming soon</div>} />
+        <Route path="/decks/:stream_id" element={<DeckPage />} />
+        <Route path="/study/:stream_id" element={<StudyPage />} />
       </Routes>
-    </BrowserRouter>
+      <Toaster />
+    </Router>
   );
 }
 

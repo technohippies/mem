@@ -12,7 +12,7 @@ db.run('PRAGMA foreign_keys = ON');
 const dbRun = promisify(db.run.bind(db));
 const dbGet = promisify(db.get.bind(db));
 const dbAll = promisify(db.all.bind(db));
-const dbExec = promisify(db.exec.bind(db));
+const dbExec = promisify(db.run.bind(db));
 
 // Export database instance and helper functions
 export { db, dbRun, dbGet, dbAll, dbExec };

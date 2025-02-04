@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
-import type { Deck } from '@/db';
+import { db, CONTEXT_ID, DECK_MODEL, orbisToAppDeck, type OrbisDeck } from '@/db/orbis';
+import type { Deck } from '@/types/models';
 
-// TODO: This will be replaced with Ceramic/Orbis integration
 const getAvailableDecks = async (): Promise<Deck[]> => {
-  console.log('Fetching decks from:', 'http://localhost:3001/api/decks');
-  const response = await fetch('http://localhost:3001/api/decks');
-  if (!response.ok) {
-    console.error('Failed to fetch decks:', response.status, response.statusText);
-    const text = await response.text();
-    console.error('Response body:', text);
-    throw new Error('Failed to fetch decks');
-  }
-  return response.json();
+  console.log('Fetching decks from OrbisDB...');
+  const { rows } = await db
+    .select()
+    .from(DECK_MODEL)
+    .where({ is_public: true })
+    .context(CONTEXT_ID)
+    .run();
+
+  console.log('Got decks from OrbisDB:', rows);
+  return rows.map(row => orbisToAppDeck(row as OrbisDeck));
 };
 
 export const HomePage = () => {
@@ -73,7 +74,7 @@ export const HomePage = () => {
         {decks.map((deck) => (
           <Link 
             key={deck.id} 
-            to={`/decks/${deck.slug}`}
+            to={`/decks/${deck.id}`}
             className="w-full"
           >
             <Button 
@@ -87,23 +88,24 @@ export const HomePage = () => {
                   className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
                 />
               )}
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 text-left">
                 <span className="font-semibold">{deck.name}</span>
                 {deck.description && (
                   <span className="text-sm text-gray-600">{deck.description}</span>
                 )}
-                {deck.tags && (
-                  <div className="flex flex-wrap gap-2">
-                    {JSON.parse(deck.tags).map((tag: string) => (
-                      <span 
-                        key={tag}
-                        className="px-2 py-1 text-xs bg-gray-100 rounded-full"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-2">
+                  <span className="px-2 py-1 text-xs bg-gray-100 rounded-full">
+                    {deck.category}
+                  </span>
+                  <span className="px-2 py-1 text-xs bg-gray-100 rounded-full">
+                    {deck.language}
+                  </span>
+                  {deck.price > 0 && (
+                    <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
+                      ${deck.price}
+                    </span>
+                  )}
+                </div>
               </div>
             </Button>
           </Link>

@@ -1,4 +1,4 @@
-import { db, dbAll, dbGet } from './db';
+import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from './db/orbis';
 
 const server = Bun.serve({
   port: 3001,
@@ -29,7 +29,14 @@ const server = Bun.serve({
       // GET /api/decks - List all decks
       if (url.pathname === '/api/decks') {
         console.log('Fetching all decks...');
-        const decks = await dbAll('SELECT * FROM decks ORDER BY created_at DESC');
+        const { rows } = await db
+          .select()
+          .from(DECK_MODEL)
+          .where({ is_public: true })
+          .context(CONTEXT_ID)
+          .run();
+
+        const decks = rows.map(row => orbisToAppDeck(row as OrbisDeck));
         console.log(`Found ${decks.length} decks`);
         return new Response(JSON.stringify(decks), { headers });
       }
@@ -38,29 +45,58 @@ const server = Bun.serve({
       if (url.pathname.match(/^\/api\/decks\/[\w-]+$/)) {
         const slug = url.pathname.split('/').pop();
         console.log(`Fetching deck with slug: ${slug}`);
-        const deck = await dbGet('SELECT * FROM decks WHERE slug = ?', [slug]);
-        
-        if (!deck) {
+        const { rows } = await db
+          .select()
+          .from(DECK_MODEL)
+          .where({ stream_id: slug })
+          .context(CONTEXT_ID)
+          .run();
+
+        if (rows.length === 0) {
           console.log(`No deck found with slug: ${slug}`);
           return new Response(JSON.stringify({ error: 'Deck not found' }), { 
             status: 404,
             headers 
           });
         }
-        
+
+        const deck = orbisToAppDeck(rows[0] as OrbisDeck);
         console.log('Found deck:', deck.name);
         return new Response(JSON.stringify(deck), { headers });
       }
 
-      // GET /api/decks/:id/cards - Get cards for a deck
+      // GET /api/decks/:slug/cards - Get cards for a deck
       if (url.pathname.match(/^\/api\/decks\/[\w-]+\/cards$/)) {
-        const deckId = url.pathname.split('/')[3];
-        console.log(`Fetching cards for deck: ${deckId}`);
-        const cards = await dbAll(
-          'SELECT * FROM flashcards WHERE deck_id = ? ORDER BY sort_order, created_at',
-          [deckId]
-        );
-        console.log(`Found ${cards.length} cards`);
+        const slug = url.pathname.split('/')[3];
+        console.log(`Fetching cards for deck with slug: ${slug}`);
+        
+        // First get the deck to verify it exists
+        const { rows: deckRows } = await db
+          .select()
+          .from(DECK_MODEL)
+          .where({ stream_id: slug })
+          .context(CONTEXT_ID)
+          .run();
+
+        if (deckRows.length === 0) {
+          console.log(`No deck found with slug: ${slug}`);
+          return new Response(JSON.stringify({ error: 'Deck not found' }), {
+            status: 404,
+            headers
+          });
+        }
+
+        // Then get all cards for this deck
+        const { rows: cardRows } = await db
+          .select()
+          .from(FLASHCARD_MODEL)
+          .where({ deck_id: slug })
+          .orderBy(['sort_order', 'asc'])
+          .context(CONTEXT_ID)
+          .run();
+
+        const cards = cardRows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+        console.log(`Found ${cards.length} cards for deck ${slug}`);
         return new Response(JSON.stringify(cards), { headers });
       }
 

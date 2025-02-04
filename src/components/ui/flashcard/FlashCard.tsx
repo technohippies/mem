@@ -1,9 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 
 export interface FlashCardProps {
-  frontContent: string;
-  backContent: string;
+  frontContent: ReactNode;
+  backContent: ReactNode;
   frontImage?: string;
   backImage?: string;
   isFlipped: boolean;
@@ -50,12 +50,12 @@ export const FlashCard = ({
             <div className="w-full h-48 overflow-hidden rounded-lg">
               <img
                 src={frontImage}
-                alt={frontContent}
+                alt={frontContent.toString()}
                 className="w-full h-full object-cover"
               />
             </div>
           )}
-          <p className="text-center text-lg font-medium">{frontContent}</p>
+          {frontContent}
         </div>
 
         {/* Back */}
@@ -71,12 +71,12 @@ export const FlashCard = ({
             <div className="w-full h-48 overflow-hidden rounded-lg">
               <img
                 src={backImage}
-                alt={backContent}
+                alt={backContent.toString()}
                 className="w-full h-full object-cover"
               />
             </div>
           )}
-          <p className="text-center text-lg font-medium">{backContent}</p>
+          {backContent}
         </div>
       </div>
     </div>

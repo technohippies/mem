@@ -1,44 +1,40 @@
 // User types
 export interface User {
-  id: string;          // Farcaster FID or Silk address
-  authMethod: 'farcaster' | 'silk';
-  displayName?: string;
-  createdAt: Date;
-  lastStudied?: Date;
-  currentStreak: number;
-  longestStreak: number;
+  id: string;
+  fid: string; // Farcaster ID
+  username: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // Deck types
 export interface Deck {
   id: string;
   name: string;
-  description: string;
-  creator: User;
-  isPublic: boolean;
-  tags: string[];
-  price?: string;      // For premium decks
-  cardCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-  encrypted?: boolean; // Whether deck is encrypted with Lit
+  description?: string;
+  image_hash?: string;
+  created_at: string;
+  updated_at: string;
+  category: string;
+  language: string;
+  price: number;
+  is_public: boolean;
+  forked_from?: string;
 }
 
 // Flashcard types
-export interface FlashCard {
+export interface Flashcard {
   id: string;
-  deckId: string;
+  deck_id: string;
   front: string;
   back: string;
-  // FSRS algorithm data
-  difficulty: number;
-  stability: number;
-  retrievability: number;
-  lastReviewed?: Date;
-  nextReview?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  encrypted?: boolean;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  language?: string;
+  audio_tts_cid?: string;
+  back_image_cid?: string;
+  front_image_cid?: string;
 }
 
 // Study session types
@@ -56,4 +52,23 @@ export interface StudySession {
 export type StudyState = 'front' | 'back' | 'rating';
 
 // Card rating based on FSRS
-export type CardRating = 1 | 2 | 3 | 4; 
+export type CardRating = 1 | 2 | 3 | 4;
+
+export interface UserCardProgress {
+  user_id: string;
+  card_id: string;
+  difficulty: number;
+  stability: number;
+  retrievability: number;
+  reps: number;
+  lapses: number;
+  last_interval: number;
+  next_review: string;
+  review_date: string;
+}
+
+export interface UserDeck {
+  user_id: string;
+  deck_id: string;
+  created_at: string;
+} 

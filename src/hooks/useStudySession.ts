@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { Flashcard } from '@/types/models';
 import { calculateFSRS, initializeCard, type FSRSOutput } from '@/services/fsrs';
-import { PouchStorage } from '@/services/storage/pouch';
+import { IDBStorage } from '@/services/storage/idb';
 
 interface StudySessionState {
   cards: Flashcard[];
@@ -27,7 +27,7 @@ export function useStudySession(
   userId: string,
   maxNewCards: number = 20
 ): StudySessionHook {
-  const [storage] = useState(() => new PouchStorage(userId));
+  const [storage, setStorage] = useState<IDBStorage | null>(null);
   const [state, setState] = useState<StudySessionState>({
     cards: [],
     currentIndex: 0,
@@ -40,20 +40,31 @@ export function useStudySession(
     }
   });
 
+  // Initialize storage
+  useEffect(() => {
+    IDBStorage.getInstance(userId).then(setStorage);
+  }, [userId]);
+
   // Load cards on mount
   useEffect(() => {
     const loadCards = async () => {
+      if (!storage || !deckId) return;
+      
       console.log(`Loading cards for deck ${deckId}...`);
-      const cards = await storage.getDueCards(deckId, userId, maxNewCards);
-      console.log(`Loaded ${cards.length} cards:`, cards);
-      setState(prev => ({
-        ...prev,
-        cards,
-        progress: {
-          ...prev.progress,
-          remaining: cards.length
-        }
-      }));
+      try {
+        const cards = await storage.getDueCards(deckId, userId, maxNewCards);
+        console.log(`Loaded ${cards.length} cards:`, cards);
+        setState(prev => ({
+          ...prev,
+          cards,
+          progress: {
+            ...prev.progress,
+            remaining: cards.length
+          }
+        }));
+      } catch (error) {
+        console.error('Failed to load cards:', error);
+      }
     };
 
     loadCards();
@@ -67,6 +78,8 @@ export function useStudySession(
   };
 
   const gradeCard = async (grade: 1 | 3) => {
+    if (!storage) return;
+
     const currentCard = state.cards[state.currentIndex];
     console.log(`Grading card ${currentCard.id} with grade ${grade}`);
     

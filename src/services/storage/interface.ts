@@ -4,6 +4,7 @@ import type { FSRSOutput } from '../fsrs';
 export interface StorageInterface {
   // Deck operations
   getDeckBySlug(slug: string): Promise<Deck | null>;
+  getDeckByStreamId(streamId: string): Promise<Deck | null>;
   getAllDecks(): Promise<Deck[]>;
   getAdminDecks(): Promise<Deck[]>;
   getUserDecks(userId: string): Promise<Deck[]>;

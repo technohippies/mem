@@ -10,7 +10,7 @@ Core Stack
 
 Database Architecture (v0)
 
-1. Local Storage (PouchDB)
+1. Local Storage (idb)
 - Primary database for offline studying
 - Document-based NoSQL structure using IndexedDB
 - Handles study sessions and FSRS algorithm data
@@ -30,8 +30,8 @@ Schema v0:
 
 Storage Flow v0:
 1. SQLite stores Users, Decks, Cards (marketplace)
-2. PouchDB stores study progress and FSRS data (local)
-3. Sync between devices handled by PouchDB replication
+2. idb stores study progress and FSRS data (local)
+3. Sync between devices handled by idb replication
 4. Migration path to Ceramic planned for v1
 
 Authentication v0:

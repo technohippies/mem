@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button/Button';
 import { FlashCard } from '@/components/ui/flashcard/FlashCard';
 import { cn } from '@/lib/utils';
 
 export interface StudyCardProps {
-  front: string;
-  back: string;
+  front: ReactNode;
+  back: ReactNode;
   frontImage?: string;
   backImage?: string;
   onAgain: () => void;
