@@ -1,78 +1,197 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { createConfig, http, WagmiProvider } from 'wagmi';
-import { mainnet } from 'wagmi/chains';
-import { createWeb3Modal } from '@web3modal/wagmi/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createContext, useContext, useState, useEffect } from 'react';
+import { useAccount, useDisconnect, useConnect } from 'wagmi';
+import { optimism } from 'wagmi/chains';
+import { toast } from 'sonner';
+import { db } from '@/db/orbis';
+import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
+import type { OrbisConnectResult } from "@useorbis/db-sdk";
+import { initStorageSession, clearStorageSession } from '@/services/storage/orbis';
+import { initDB } from '@/services/storage/idb';
 
-// Initialize wagmi config
-const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '';
-
-const metadata = {
-  name: 'Anki Farcaster',
-  description: 'Spaced repetition learning on Farcaster',
-  url: 'https://anki.farcaster.xyz', // TODO: Update with actual URL
-  icons: ['https://avatars.githubusercontent.com/u/37784886']
-};
-
-const config = createConfig({
-  chains: [mainnet],
-  transports: {
-    [mainnet.id]: http()
-  },
-  ssr: false
-});
-
-createWeb3Modal({
-  wagmiConfig: config,
-  projectId,
-  themeMode: 'light',
-  themeVariables: {
-    '--w3m-font-family': 'Inter, sans-serif',
-    '--w3m-accent': '#3b82f6'
-  }
-});
-
-// Create a client
-const queryClient = new QueryClient();
+type AuthType = 'farcaster' | 'silk' | null;
 
 interface AuthContextType {
   isConnected: boolean;
-  address: string | null;
-  connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  authType: AuthType;
+  fid: number | null;
+  silkAddress: string | null;
+  connectWithFarcaster: () => Promise<void>;
+  connectWithSilk: () => Promise<void>;
+  disconnect: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  isConnected: false,
-  address: null,
-  connect: async () => {},
-  disconnect: async () => {}
-});
+declare global {
+  interface Window {
+    ethereum: any;
+  }
+}
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isConnected, setIsConnected] = useState(false);
-  const [address, setAddress] = useState<string | null>(null);
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-  // TODO: Add connection state management
-  const connect = async () => {
-    // This will be handled by Web3Modal
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [authType, setAuthType] = useState<AuthType>(null);
+  const [fid, setFid] = useState<number | null>(null);
+  
+  // Use Wagmi hooks for wallet state
+  const { address: silkAddress, isConnected } = useAccount();
+  const { disconnectAsync } = useDisconnect();
+  const { connectAsync, connectors } = useConnect();
+
+  // Initialize Orbis session when Silk wallet connects
+  useEffect(() => {
+    const initOrbisSession = async () => {
+      if (isConnected && silkAddress && window.ethereum) {
+        try {
+          // Create Orbis auth instance
+          const auth = new OrbisEVMAuth(window.ethereum);
+          
+          // Connect to Orbis
+          const authResult = await db.connectUser({ auth });
+          console.log('Orbis auth result:', authResult);
+          
+          if (authResult) {
+            await initStorageSession();
+            toast.success('Connected to Orbis storage');
+          } else {
+            console.error('Failed to connect to Orbis:', authResult);
+            toast.error('Failed to connect to Orbis storage');
+          }
+        } catch (error) {
+          console.error('Failed to initialize Orbis session:', error);
+          toast.error('Failed to initialize storage session');
+        }
+      }
+    };
+
+    initOrbisSession();
+  }, [isConnected, silkAddress]);
+
+  // Load persisted auth state
+  useEffect(() => {
+    const loadAuthState = async () => {
+      try {
+        const db = await initDB();
+        const authState = await db.get('auth', 'current');
+        
+        if (authState) {
+          setAuthType(authState.type);
+          setFid(authState.fid);
+          
+          // Re-initialize Orbis session if needed
+          if (authState.type === 'silk' && silkAddress) {
+            await initStorageSession();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load auth state:', error);
+      }
+    };
+
+    loadAuthState();
+  }, [silkAddress]);
+
+  // Save auth state when it changes
+  useEffect(() => {
+    const saveAuthState = async () => {
+      try {
+        const db = await initDB();
+        if (isConnected && silkAddress) {
+          await db.put('auth', {
+            type: 'silk',
+            address: silkAddress,
+            fid: null,
+            timestamp: Date.now(),
+          }, 'current');
+        } else if (!isConnected && !silkAddress) {
+          await db.delete('auth', 'current');
+        }
+      } catch (error) {
+        console.error('Failed to save auth state:', error);
+      }
+    };
+
+    saveAuthState();
+  }, [isConnected, silkAddress]);
+
+  const connectWithFarcaster = async () => {
+    try {
+      // TODO: Implement Farcaster sign-in
+      setFid(1234); // Temporary mock FID
+      
+      // Initialize Orbis storage session
+      await initStorageSession();
+      
+      setAuthType('farcaster');
+      toast.success('Successfully connected with Farcaster');
+    } catch (error) {
+      console.error('Farcaster connection error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to connect with Farcaster');
+    }
+  };
+
+  const connectWithSilk = async () => {
+    try {
+      const connector = connectors[0]; // Use the first connector (Silk)
+      if (!connector) {
+        throw new Error('No connector available');
+      }
+
+      // Connect using Wagmi
+      await connectAsync({ 
+        chainId: optimism.id,
+        connector
+      });
+      
+      setAuthType('silk');
+      toast.success('Successfully connected with Silk');
+    } catch (error) {
+      console.error('Silk connection error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to connect with Silk');
+    }
   };
 
   const disconnect = async () => {
-    // This will be handled by Web3Modal
+    try {
+      // Disconnect wallet
+      await disconnectAsync();
+      
+      // Clear Orbis storage session
+      await clearStorageSession();
+      
+      // Clear persisted auth state
+      const db = await initDB();
+      await db.delete('auth', 'current');
+      
+      setAuthType(null);
+      setFid(null);
+      toast.success('Disconnected successfully');
+    } catch (error) {
+      console.error('Failed to disconnect:', error);
+      toast.error('Failed to disconnect properly');
+    }
   };
 
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <AuthContext.Provider value={{ isConnected, address, connect, disconnect }}>
-          {children}
-        </AuthContext.Provider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <AuthContext.Provider
+      value={{
+        isConnected: !!silkAddress,
+        authType,
+        fid,
+        silkAddress: silkAddress?.toString() || null,
+        connectWithFarcaster,
+        connectWithSilk,
+        disconnect,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
   );
 }
 
 export function useAuth() {
-  return useContext(AuthContext);
-} 
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
