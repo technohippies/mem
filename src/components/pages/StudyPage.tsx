@@ -9,6 +9,7 @@ import { IDBStorage } from '@/services/storage/idb';
 import { useToast } from '@/components/ui/toast/useToast';
 import { getProgressFromOrbis, pushProgressToOrbis } from '@/services/sync';
 import type { FSRSOutput } from '@/services/fsrs';
+import { useAuth } from '@/contexts/AuthContext';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
   console.log('Fetching deck:', streamId);
@@ -49,6 +50,7 @@ export function StudyPage() {
   const [isInitialized, setIsInitialized] = useState(false);
   const userId = 'test-user';
   const { toast } = useToast();
+  const { isConnected, connect } = useAuth();
 
   // Only initialize study session when we have a deckId AND cards are stored
   const { 
@@ -220,79 +222,105 @@ export function StudyPage() {
           </Button>
           
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={async () => {
-                if (!stream_id || !deckId) return;
-                try {
-                  const storage = await IDBStorage.getInstance(userId);
-                  
-                  // Get all cards and progress from Orbis
-                  const cards = await getFlashcards(stream_id);
-                  const orbisProgress = await getProgressFromOrbis(userId, deckId);
-                  
-                  // Store in IDB
-                  await storage.clearProgress(deckId);
-                  await Promise.all([
-                    ...cards.map(card => storage.storeCard(card)),
-                    ...orbisProgress.map(p => storage.updateCardProgress(p.card_id, userId, p))
-                  ]);
-                  
-                  toast({
-                    title: "Restored from Cloud",
-                    description: "Successfully loaded latest data from cloud.",
-                  });
-                  
-                  // Reload the study session
-                  window.location.reload();
-                } catch (error) {
-                  console.error('Failed to restore from cloud:', error);
-                  toast({
-                    title: "Restore Failed",
-                    description: "Failed to load data from cloud.",
-                    variant: "destructive"
-                  });
-                }
-              }}
-            >
-              Restore from Cloud
-            </Button>
-            
-            <Button
-              variant="outline"
-              onClick={async () => {
-                if (!stream_id || !deckId) return;
-                try {
-                  const storage = await IDBStorage.getInstance(userId);
-                  
-                  // Get all progress from IDB
-                  const cards = await storage.getCardsForDeck(deckId);
-                  const progressPromises = cards.map(async card => {
-                    const progress = await storage.getCardProgress(card.id, userId);
-                    return progress ? { ...progress, card_id: card.id } : null;
-                  });
-                  
-                  const progress = (await Promise.all(progressPromises)).filter((p): p is FSRSOutput & { card_id: string } => p !== null);
-                  
-                  // Push to Orbis
-                  await pushProgressToOrbis(userId, deckId, progress);
-                  
-                  toast({
-                    title: "Synced to Cloud",
-                    description: "Successfully saved progress to cloud.",
-                  });
-                } catch (error) {
-                  console.error('Failed to sync to cloud:', error);
-                  toast({
-                    title: "Sync Failed",
-                    description: "Failed to save progress to cloud.",
-                    variant: "destructive"
-                  });
-                }
-              }}
-            >
-              Save to Cloud
-            </Button>
+            {isConnected ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!stream_id || !deckId) return;
+                    try {
+                      const storage = await IDBStorage.getInstance(userId);
+                      
+                      // Get all cards and progress from Orbis
+                      const cards = await getFlashcards(stream_id);
+                      const orbisProgress = await getProgressFromOrbis(userId, deckId);
+                      
+                      // Store in IDB
+                      await storage.clearProgress(deckId);
+                      await Promise.all([
+                        ...cards.map(card => storage.storeCard(card)),
+                        ...orbisProgress.map(p => storage.updateCardProgress(p.card_id, userId, p))
+                      ]);
+                      
+                      toast({
+                        title: "Restored from Cloud",
+                        description: "Successfully loaded latest data from cloud.",
+                      });
+                      
+                      // Reload the study session
+                      window.location.reload();
+                    } catch (error) {
+                      console.error('Failed to restore from cloud:', error);
+                      toast({
+                        title: "Restore Failed",
+                        description: "Failed to load data from cloud.",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  Restore from Cloud
+                </Button>
+                
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    if (!stream_id || !deckId) return;
+                    try {
+                      const storage = await IDBStorage.getInstance(userId);
+                      
+                      // Get all progress from IDB
+                      const cards = await storage.getCardsForDeck(deckId);
+                      const progressPromises = cards.map(async card => {
+                        const progress = await storage.getCardProgress(card.id, userId);
+                        return progress ? { ...progress, card_id: card.id } : null;
+                      });
+                      
+                      const progress = (await Promise.all(progressPromises)).filter((p): p is FSRSOutput & { card_id: string } => p !== null);
+                      
+                      // Push to Orbis
+                      await pushProgressToOrbis(userId, deckId, progress);
+                      
+                      toast({
+                        title: "Synced to Cloud",
+                        description: "Successfully saved progress to cloud.",
+                      });
+                    } catch (error) {
+                      console.error('Failed to sync to cloud:', error);
+                      toast({
+                        title: "Sync Failed",
+                        description: "Failed to save progress to cloud.",
+                        variant: "destructive"
+                      });
+                    }
+                  }}
+                >
+                  Save to Cloud
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    await connect();
+                    toast({
+                      title: "Connected!",
+                      description: "You can now sync your progress with the cloud.",
+                    });
+                  } catch (error) {
+                    console.error('Failed to connect:', error);
+                    toast({
+                      title: "Connection Failed",
+                      description: "Failed to connect wallet. Please try again.",
+                      variant: "destructive"
+                    });
+                  }
+                }}
+              >
+                Connect Wallet to Sync
+              </Button>
+            )}
           </div>
           
           <div className="text-sm text-gray-500">
