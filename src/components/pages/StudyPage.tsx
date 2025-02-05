@@ -17,6 +17,8 @@ export const StudyPage = () => {
   const navigate = useNavigate();
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncComplete, setSyncComplete] = useState(false);
   const { 
     currentCard, 
     showingCard, 
@@ -133,6 +135,9 @@ export const StudyPage = () => {
       }
     }
 
+    setIsSyncing(true);
+    setSyncComplete(false);
+
     try {
       const storage = await IDBStorage.getInstance();
       const { rows } = await db
@@ -236,6 +241,7 @@ export const StudyPage = () => {
         title: "Success",
         description: "Progress synced successfully",
       });
+      setSyncComplete(true);
     } catch (error) {
       console.error('Failed to sync:', error);
       toast({
@@ -243,6 +249,8 @@ export const StudyPage = () => {
         description: error instanceof Error ? error.message : "Failed to sync progress",
         variant: "destructive"
       });
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -263,7 +271,7 @@ export const StudyPage = () => {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <h1 className="text-2xl font-bold mb-4">
-          {isExtraStudy ? 'Extra Study Complete!' : 'Daily Reviews Complete!'}
+          {isExtraStudy ? 'Study Session Complete!' : 'Daily Reviews Complete!'}
         </h1>
         <div className="text-center mb-4">
           <p>Today's progress:</p>
@@ -274,14 +282,14 @@ export const StudyPage = () => {
         <div className="flex flex-col gap-3 w-full max-w-xs">
           {!isConnected ? (
             <Button 
-              variant="outline"
+              variant="secondary"
               onClick={() => appKit?.open()}
             >
               Connect Wallet
             </Button>
           ) : !isCeramicConnected ? (
             <Button 
-              variant="outline"
+              variant="secondary"
               onClick={async () => {
                 try {
                   if (!window.ethereum || !userAddress) {
@@ -342,15 +350,25 @@ export const StudyPage = () => {
             </Button>
           ) : (
             <Button 
-              variant="outline"
+              variant="secondary"
               onClick={handleSync}
+              disabled={isSyncing || syncComplete}
             >
-              Save Progress to Cloud
+              {isSyncing ? (
+                <Loader size={16} color="currentColor" />
+              ) : syncComplete ? (
+                <span>✓ Synced</span>
+              ) : (
+                'Save Progress to Cloud'
+              )}
             </Button>
           )}
           
-          <Button onClick={onRestart}>
-            {isExtraStudy ? 'Study Again' : 'Extra Study'}
+          <Button 
+            onClick={onRestart}
+            className="bg-blue-500 hover:bg-blue-600 text-white"
+          >
+            Study Again
           </Button>
         </div>
       </div>
@@ -391,7 +409,7 @@ export const StudyPage = () => {
             <div className="flex items-center gap-4">
               <div className="text-sm text-gray-600">
                 {isExtraStudy ? (
-                  <p>Extra Study Mode</p>
+                  <p>Study Again Mode</p>
                 ) : (
                   <>
                     <p>New: {newCardsToday}/20</p>
@@ -400,10 +418,17 @@ export const StudyPage = () => {
                 )}
               </div>
               <Button
-                variant="outline"
+                variant="secondary"
                 onClick={handleSync}
+                disabled={isSyncing}
               >
-                {isAuthenticated ? 'Sync Progress' : 'Connect to Sync'}
+                {isSyncing ? (
+                  <Loader size={16} color="currentColor" />
+                ) : syncComplete ? (
+                  <span>✓ Synced</span>
+                ) : (
+                  isAuthenticated ? 'Sync Progress' : 'Connect to Sync'
+                )}
               </Button>
             </div>
           </div>
