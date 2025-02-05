@@ -21,44 +21,98 @@ const getAvailableDecks = async (): Promise<Deck[]> => {
   return rows.map(row => orbisToAppDeck(row as OrbisDeck));
 };
 
-const DeckCard = ({ deck }: { deck: Deck }) => (
-  <Link 
-    key={deck.id} 
-    to={`/decks/${deck.id}`}
-    className="w-full"
-  >
-    <div className="w-full p-4 rounded-lg border border-neutral-800 hover:border-neutral-700 transition-colors bg-neutral-900/50 hover:bg-neutral-900 flex gap-4 items-start">
-      {deck.image_hash && (
-        <img 
-          src={deck.image_hash} 
-          alt={deck.name}
-          className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-        />
-      )}
-      <div className="flex flex-col gap-2 text-left">
-        <span className="font-semibold text-neutral-200">{deck.name}</span>
-        {deck.description && (
-          <span className="text-sm text-neutral-400">{deck.description}</span>
+const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) => {
+  const [cardStats, setCardStats] = useState({
+    newCount: 0,
+    reviewCount: 0,
+    dueCount: 0,
+  });
+
+  useEffect(() => {
+    const loadCardStats = async () => {
+      // Only load stats for user's decks (compact=true)
+      if (!compact) return;
+      
+      try {
+        const storage = await IDBStorage.getInstance();
+        const cards = await storage.getCardsForDeck(deck.id);
+        const cardProgressPromises = cards.map(card => storage.getCardProgress(card.id, 'user'));
+        const cardProgresses = await Promise.all(cardProgressPromises);
+        const studiedToday = await storage.getCardsStudiedToday('user', deck.id);
+        
+        const newCards = cards.filter((_, index) => !cardProgresses[index]);
+        const reviewCards = cards.filter(card => 
+          studiedToday.includes(card.id)
+        );
+        const dueCards = cards.filter((card, index) => {
+          const progress = cardProgresses[index];
+          const isStudiedToday = studiedToday.includes(card.id);
+          return progress && !isStudiedToday && progress.review_date && new Date(progress.review_date) <= new Date();
+        });
+
+        setCardStats({
+          newCount: newCards.length,
+          reviewCount: reviewCards.length,
+          dueCount: dueCards.length,
+        });
+      } catch (err) {
+        console.error('Failed to load card stats:', err);
+      }
+    };
+
+    loadCardStats();
+  }, [deck.id, compact]);
+
+  return (
+    <Link 
+      key={deck.id} 
+      to={`/decks/${deck.id}`}
+      className="w-full"
+    >
+      <div className="w-full p-4 rounded-lg border border-neutral-800 hover:border-neutral-700 transition-colors bg-neutral-900/50 hover:bg-neutral-900 flex gap-4 items-start">
+        {deck.image_hash && (
+          <img 
+            src={deck.image_hash} 
+            alt={deck.name}
+            className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+          />
         )}
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="secondary" className="gap-1">
-            <Tag weight="fill" size={14} />
-            {deck.category}
-          </Badge>
-          <Badge variant="secondary" className="gap-1">
-            <Translate weight="fill" size={14} />
-            {deck.language}
-          </Badge>
-          {deck.price > 0 && (
-            <Badge variant="default" className="text-green-400">
-              ${deck.price}
-            </Badge>
+        <div className="flex-1 flex flex-col gap-2 text-left">
+          <div className="flex justify-between items-center">
+            <span className="font-semibold text-neutral-200">{deck.name}</span>
+            {compact && (
+              <div className="flex gap-2 text-sm items-center">
+                <span className="text-blue-400">{cardStats.newCount}</span>
+                <span className="text-neutral-400">{cardStats.reviewCount}</span>
+                <span className="text-red-400">{cardStats.dueCount}</span>
+              </div>
+            )}
+          </div>
+          {!compact && deck.description && (
+            <span className="text-sm text-neutral-400">{deck.description}</span>
+          )}
+          {!compact && (
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary" className="gap-1">
+                <Tag weight="fill" size={14} />
+                {deck.category}
+              </Badge>
+              <Badge variant="secondary" className="gap-1">
+                <Translate weight="fill" size={14} />
+                {deck.language}
+              </Badge>
+              {deck.price > 0 && (
+                <Badge variant="default" className="text-green-400">
+                  ${deck.price}
+                </Badge>
+              )}
+            </div>
           )}
         </div>
       </div>
-    </div>
-  </Link>
-);
+    </Link>
+  );
+};
 
 export const HomePage = () => {
   const [userDecks, setUserDecks] = useState<Deck[]>([]);
@@ -116,13 +170,13 @@ export const HomePage = () => {
     <div className="flex flex-col gap-8 p-4">
       {/* User's Decks */}
       <section>
-        <h2 className="text-2xl font-bold mb-4">Your Study Decks</h2>
+        <h2 className="text-2xl font-bold mb-4">Your Decks</h2>
         {userDecks.length === 0 ? (
           <p className="text-neutral-400">You haven't added any decks yet. Browse the available decks below to get started!</p>
         ) : (
           <div className="flex flex-col gap-2">
             {userDecks.map((deck) => (
-              <DeckCard key={deck.id} deck={deck} />
+              <DeckCard key={deck.id} deck={deck} compact={true} />
             ))}
           </div>
         )}
@@ -133,7 +187,7 @@ export const HomePage = () => {
         <h2 className="text-2xl font-bold mb-4">Available Decks</h2>
         <div className="flex flex-col gap-2">
           {availableDecks.map((deck) => (
-            <DeckCard key={deck.id} deck={deck} />
+            <DeckCard key={deck.id} deck={deck} compact={false} />
           ))}
         </div>
       </section>
