@@ -15,7 +15,7 @@ interface StudySessionState {
   isExtraStudy: boolean;
 }
 
-export function useStudySession(deckId: string) {
+export function useStudySession(deckId: string, isInitialized: boolean = false) {
   const [state, setState] = useState<StudySessionState>({
     cards: [],
     currentIndex: 0,
@@ -31,18 +31,24 @@ export function useStudySession(deckId: string) {
   const [storage, setStorage] = useState<IDBStorage | null>(null);
   const userId = 'user'; // TODO: Get from auth context
 
+  // Initialize storage only once and wait for it to be ready
   useEffect(() => {
+    let mounted = true;
     const initStorage = async () => {
-      console.log('Initializing storage...');
       try {
+        // Wait a bit to ensure any previous connections are closed
+        await new Promise(resolve => setTimeout(resolve, 100));
         const instance = await IDBStorage.getInstance();
-        console.log('Storage initialized successfully');
-        setStorage(instance);
+        if (mounted) {
+          console.log('Storage initialized successfully in useStudySession');
+          setStorage(instance);
+        }
       } catch (error) {
-        console.error('Failed to initialize storage:', error);
+        console.error('Failed to initialize storage in useStudySession:', error);
       }
     };
     initStorage();
+    return () => { mounted = false; };
   }, []);
 
   const loadStudySession = async (isExtra: boolean = false) => {
@@ -111,10 +117,10 @@ export function useStudySession(deckId: string) {
   };
 
   useEffect(() => {
-    if (storage && deckId) {
+    if (storage && deckId && isInitialized) {
       loadStudySession(false);
     }
-  }, [deckId, storage]);
+  }, [deckId, storage, isInitialized]);
 
   const handleGrade = async (grade: 1 | 3) => {
     if (!storage) return;
@@ -124,8 +130,8 @@ export function useStudySession(deckId: string) {
     if (!card) return;
 
     console.log('Grading card:', card.id, 'with grade:', grade, isExtraStudy ? '(extra study)' : '(regular study)');
-    
-    // Hide current card
+
+    // Hide card immediately before processing
     setState(prev => ({ ...prev, showingCard: false }));
 
     try {
@@ -176,22 +182,22 @@ export function useStudySession(deckId: string) {
 
       // Check if we've reached the end of the session
       const nextIndex = currentIndex + 1;
-      const sessionComplete = nextIndex >= cards.length;
-      console.log('Next index:', nextIndex, 'Session complete:', sessionComplete);
+      // Session is complete when we've finished grading the current card and it's the last one
+      const sessionComplete = currentIndex >= cards.length - 1;
+      console.log('Current index:', currentIndex, 'Cards length:', cards.length, 'Session complete:', sessionComplete);
 
-      // Move to next card after a short delay
-      setTimeout(() => {
-        setState(prev => ({
-          ...prev,
-          currentIndex: nextIndex,
-          showingCard: !sessionComplete,
-          newCardsToday: !isExtraStudy && isNewCard ? prev.newCardsToday + 1 : prev.newCardsToday,
-          reviewsToday: !isExtraStudy && !isNewCard ? prev.reviewsToday + 1 : prev.reviewsToday,
-          sessionComplete
-        }));
-      }, 50);
+      // Move to next card and show it if not complete
+      setState(prev => ({
+        ...prev,
+        currentIndex: nextIndex,
+        showingCard: !sessionComplete,
+        newCardsToday: !isExtraStudy && isNewCard ? prev.newCardsToday + 1 : prev.newCardsToday,
+        reviewsToday: !isExtraStudy && !isNewCard ? prev.reviewsToday + 1 : prev.reviewsToday,
+        sessionComplete
+      }));
     } catch (error) {
       console.error('Failed to process grade:', error);
+      // Show the current card again if there was an error
       setState(prev => ({ ...prev, showingCard: true }));
     }
   };

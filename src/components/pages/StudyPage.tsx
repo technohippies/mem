@@ -10,13 +10,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
+import { tailspin } from 'ldrs';
+
+// Register the tailspin loader
+tailspin.register();
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
   const navigate = useNavigate();
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showLoading, setShowLoading] = useState(false);
   const { 
     currentCard, 
     showingCard, 
@@ -28,32 +31,33 @@ export const StudyPage = () => {
     onGrade,
     onRestart,
     reloadSession 
-  } = useStudySession(stream_id || '');
+  } = useStudySession(stream_id || '', isInitialized);
   const { toast } = useToast();
   const { isAuthenticated, isCeramicConnected, userAddress } = useAuth();
   const appKit = useAppKit();
   const { isConnected } = useAppKitAccount();
 
-  // Show loading state after a small delay
-  useEffect(() => {
-    if (!isInitialized || isLoading) {
-      const timer = setTimeout(() => setShowLoading(true), 500);
-      return () => clearTimeout(timer);
-    } else {
-      setShowLoading(false);
-    }
-  }, [isInitialized, isLoading]);
-
   // Initialize cards in storage
   useEffect(() => {
+    let mounted = true;
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 200;
+
     const initCards = async () => {
       if (!stream_id) return;
 
       try {
-        const storage = await IDBStorage.getInstance();
+        // Wait a bit to ensure storage is ready
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
         
+        const storage = await IDBStorage.getInstance();
+        if (!mounted) return;
+
         // Check if we have cards in storage
         const existingCards = await storage.getCardsForDeck(stream_id);
+        if (!mounted) return;
+
         if (existingCards.length === 0) {
           // Fetch and store cards
           console.log('No cards in storage, fetching from API...');
@@ -68,23 +72,35 @@ export const StudyPage = () => {
           const cardsToStore = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
           console.log(`Storing ${cardsToStore.length} cards in storage...`);
           await Promise.all(cardsToStore.map(card => storage.storeCard(card)));
+          if (!mounted) return;
+          
           console.log('Cards stored successfully');
-
-          // Reload study session after storing cards
           await reloadSession();
         } else {
           console.log(`Found ${existingCards.length} cards in storage`);
         }
 
-        setIsInitialized(true);
+        if (mounted) {
+          setIsInitialized(true);
+        }
       } catch (error) {
         console.error('Failed to initialize cards:', error);
-        setError(error instanceof Error ? error.message : 'Failed to load cards');
+        if (error instanceof Error && error.name === 'InvalidStateError' && retryCount < MAX_RETRIES) {
+          // If database is closing, retry after a delay
+          retryCount++;
+          console.log(`Retrying initialization (attempt ${retryCount}/${MAX_RETRIES})...`);
+          setTimeout(initCards, RETRY_DELAY);
+          return;
+        }
+        if (mounted) {
+          setError(error instanceof Error ? error.message : 'Failed to load cards');
+        }
       }
     };
 
     initCards();
-  }, [stream_id, reloadSession]);
+    return () => { mounted = false; };
+  }, [stream_id]);
 
   const handleSync = async () => {
     if (!stream_id) {
@@ -245,14 +261,7 @@ export const StudyPage = () => {
     );
   }
 
-  if (showLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <p>Loading cards...</p>
-      </div>
-    );
-  }
-
+  // Check completion first
   if (isComplete) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
@@ -323,7 +332,22 @@ export const StudyPage = () => {
     );
   }
 
-  if (!currentCard) {
+  // Then show loading spinner for initialization and loading states
+  if (!isInitialized || isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <l-tailspin
+          size="40"
+          stroke="3"
+          speed="0.9"
+          color="white"
+        ></l-tailspin>
+      </div>
+    );
+  }
+
+  // Finally check for no cards (but not when session is complete)
+  if (!currentCard && !isComplete) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <p>No cards due for review.</p>
