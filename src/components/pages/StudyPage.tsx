@@ -10,10 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
-import { tailspin } from 'ldrs';
-
-// Register the tailspin loader
-tailspin.register();
+import { Loader } from '@/components/ui/loader/Loader';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -287,27 +284,55 @@ export const StudyPage = () => {
               variant="outline"
               onClick={async () => {
                 try {
-                  if (!window.ethereum) {
+                  if (!window.ethereum || !userAddress) {
                     toast({
                       title: "Error",
-                      description: "No Ethereum provider found",
+                      description: "Please connect your wallet first",
                       variant: "destructive"
                     });
                     return;
                   }
+
+                  // Show loading state
+                  toast({
+                    title: "Connecting",
+                    description: "Initializing Ceramic connection...",
+                  });
+
+                  // Wait for wallet connection to stabilize
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+
+                  console.log('Initializing Ceramic connection with address:', userAddress);
                   const auth = new OrbisEVMAuth(window.ethereum as any);
+                  console.log('Created Orbis auth instance');
+                  
                   const result = await db.connectUser({ auth });
+                  console.log('Ceramic connection result:', result);
+                  
                   if (result) {
-                    toast({
-                      title: "Success",
-                      description: "Connected to Ceramic network"
-                    });
+                    // Check if we're actually connected
+                    const isConnected = await db.isUserConnected();
+                    console.log('Connection check result:', isConnected);
+                    
+                    if (isConnected) {
+                      toast({
+                        title: "Success",
+                        description: "Connected to Ceramic network. Refreshing page..."
+                      });
+                      // Wait a bit to show the success message before refresh
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+                      window.location.reload();
+                    } else {
+                      throw new Error('Failed to verify Ceramic connection');
+                    }
+                  } else {
+                    throw new Error('Failed to connect to Ceramic');
                   }
                 } catch (error) {
                   console.error('Failed to connect to Ceramic:', error);
                   toast({
                     title: "Error",
-                    description: "Failed to connect to Ceramic network",
+                    description: error instanceof Error ? error.message : "Failed to connect to Ceramic network. Please try again.",
                     variant: "destructive"
                   });
                 }
@@ -335,13 +360,8 @@ export const StudyPage = () => {
   // Then show loading spinner for initialization and loading states
   if (!isInitialized || isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4">
-        <l-tailspin
-          size="40"
-          stroke="3"
-          speed="0.9"
-          color="white"
-        ></l-tailspin>
+      <div className="flex flex-col items-center justify-center min-h-screen">
+        <Loader />
       </div>
     );
   }

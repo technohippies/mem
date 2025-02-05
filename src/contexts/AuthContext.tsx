@@ -48,55 +48,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        console.log('[AuthContext] Initializing Orbis session...');
+        console.log('[AuthContext] Checking Orbis connection...');
         
-        // First check if we're already connected
+        // Only check if we're already connected, don't try to initialize
         const isAlreadyConnected = await db.isUserConnected();
         console.log('[AuthContext] Orbis connection check:', { isAlreadyConnected });
         
         if (isAlreadyConnected) {
           console.log('[AuthContext] Already connected to Orbis');
           setIsCeramicConnected(true);
-          return;
-        }
-
-        // Initialize storage session with retries
-        let retries = 3;
-        while (retries > 0) {
-          try {
-            console.log(`[AuthContext] Attempting to initialize storage session (${retries} retries left)`);
-            await initStorageSession();
-            console.log('[AuthContext] Successfully initialized Orbis storage session');
-            setIsCeramicConnected(true);
-            toast.success('Connected to Orbis storage');
-            break;
-          } catch (error) {
-            console.error(`[AuthContext] Failed to initialize storage session (${retries} retries left):`, error);
-            retries--;
-            if (retries === 0) {
-              throw error;
-            }
-            // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
+        } else {
+          setIsCeramicConnected(false);
         }
       } catch (error) {
-        console.error('[AuthContext] Failed to initialize Orbis session:', error);
-        toast.error('Failed to initialize storage session');
+        console.error('[AuthContext] Failed to check Orbis connection:', error);
         setIsCeramicConnected(false);
-        
-        // Try to clean up
-        try {
-          await clearStorageSession();
-        } catch (cleanupError) {
-          console.error('[AuthContext] Failed to clean up after session init error:', cleanupError);
-        }
       } finally {
         setIsInitializing(false);
       }
     };
 
-    console.log('[AuthContext] Wallet connection changed, initializing session...');
+    console.log('[AuthContext] Wallet connection changed, checking connection...');
     initOrbisSession();
   }, [isConnected, userAddress]);
 
@@ -111,13 +83,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (authState) {
           console.log('Found persisted auth state:', authState);
           
-          // Re-initialize Orbis session if needed
+          // Only check connection status, don't initialize
           if (authState.address === userAddress) {
             const isConnected = await db.isUserConnected();
-            if (!isConnected) {
-              await initStorageSession();
-              setIsCeramicConnected(true);
-            }
+            setIsCeramicConnected(isConnected);
           }
         } else {
           console.log('No persisted auth state found');
