@@ -379,7 +379,7 @@ export const StudyPage = () => {
   if (!isInitialized || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen">
-        <Loader />
+        <Loader size={48} />
       </div>
     );
   }
@@ -397,8 +397,8 @@ export const StudyPage = () => {
     <AuthWrapper>
       <div className="flex flex-col min-h-screen">
         {/* Header */}
-        <div className="p-4 border-b">
-          <div className="flex justify-between items-center max-w-2xl mx-auto gap-4">
+        <div className="p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex justify-between items-center max-w-2xl mx-auto">
             <Button 
               variant="ghost" 
               onClick={() => navigate(`/decks/${stream_id}`)}
@@ -406,30 +406,15 @@ export const StudyPage = () => {
               ← Back to Deck
             </Button>
             
-            <div className="flex items-center gap-4">
-              <div className="text-sm text-gray-600">
-                {isExtraStudy ? (
-                  <p>Study Again Mode</p>
-                ) : (
-                  <>
-                    <p>New: {newCardsToday}/20</p>
-                    <p>Reviews: {reviewsToday}</p>
-                  </>
-                )}
-              </div>
-              <Button
-                variant="secondary"
-                onClick={handleSync}
-                disabled={isSyncing}
-              >
-                {isSyncing ? (
-                  <Loader size={16} color="currentColor" />
-                ) : syncComplete ? (
-                  <span>✓ Synced</span>
-                ) : (
-                  isAuthenticated ? 'Sync Progress' : 'Connect to Sync'
-                )}
-              </Button>
+            <div className="text-sm text-gray-600">
+              {isExtraStudy ? (
+                <p>Study Again Mode</p>
+              ) : (
+                <>
+                  <p>New: {newCardsToday}/20</p>
+                  <p>Reviews: {reviewsToday}</p>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect } from 'react';
 import { useAppKitAccount } from '@reown/appkit/react';
 import { toast } from 'sonner';
 import { db } from '@/db/orbis';
-import { initStorageSession, clearStorageSession } from '@/services/storage/orbis';
+import { clearStorageSession } from '@/services/storage/orbis';
 import { IDBStorage } from '@/services/storage/idb';
 
 interface AuthContextType {

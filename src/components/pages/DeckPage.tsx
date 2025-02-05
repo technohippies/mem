@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button/Button';
 import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from '@/db/orbis';
 import type { Deck, Flashcard } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
+import { Loader } from '@/components/ui/loader/Loader';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
   console.log('Fetching deck:', streamId);
@@ -71,7 +72,7 @@ export const DeckPage = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p>Loading deck...</p>
+        <Loader size={48} />
       </div>
     );
   }
