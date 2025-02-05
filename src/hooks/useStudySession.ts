@@ -1,156 +1,217 @@
 import { useState, useEffect } from 'react';
 import type { Flashcard } from '@/types/models';
-import { calculateFSRS, initializeCard, type FSRSOutput } from '@/services/fsrs';
+import { calculateFSRS, type FSRSInput, initializeCard } from '@/services/fsrs';
 import { IDBStorage } from '@/services/storage/idb';
 
 interface StudySessionState {
   cards: Flashcard[];
   currentIndex: number;
-  showAnswer: boolean;
-  completed: boolean;
-  progress: {
-    reviewed: number;
-    remaining: number;
-    correct: number;
-  };
+  showingCard: boolean;
+  isLoading: boolean;
+  totalCards: number;
+  newCardsToday: number;
+  reviewsToday: number;
+  sessionComplete: boolean;
+  isExtraStudy: boolean;
 }
 
-interface StudySessionHook {
-  state: StudySessionState;
-  showAnswer: () => void;
-  gradeCard: (grade: 1 | 3) => void; // 1: Again, 3: Good
-  reset: () => void;
-}
-
-export function useStudySession(
-  deckId: string,
-  userId: string,
-  maxNewCards: number = 20
-): StudySessionHook {
-  const [storage, setStorage] = useState<IDBStorage | null>(null);
+export function useStudySession(deckId: string) {
   const [state, setState] = useState<StudySessionState>({
     cards: [],
     currentIndex: 0,
-    showAnswer: false,
-    completed: false,
-    progress: {
-      reviewed: 0,
-      remaining: 0,
-      correct: 0
-    }
+    showingCard: true,
+    isLoading: true,
+    totalCards: 0,
+    newCardsToday: 0,
+    reviewsToday: 0,
+    sessionComplete: false,
+    isExtraStudy: false
   });
 
-  // Initialize storage
-  useEffect(() => {
-    IDBStorage.getInstance(userId).then(setStorage);
-  }, [userId]);
+  const [storage, setStorage] = useState<IDBStorage | null>(null);
+  const userId = 'user'; // TODO: Get from auth context
 
-  // Load cards on mount
   useEffect(() => {
-    const loadCards = async () => {
-      if (!storage || !deckId) return;
-      
-      console.log(`Loading cards for deck ${deckId}...`);
+    const initStorage = async () => {
+      console.log('Initializing storage...');
       try {
-        const cards = await storage.getDueCards(deckId, userId, maxNewCards);
-        console.log(`Loaded ${cards.length} cards:`, cards);
-        setState(prev => ({
-          ...prev,
-          cards,
-          progress: {
-            ...prev.progress,
-            remaining: cards.length
-          }
-        }));
+        const instance = await IDBStorage.getInstance();
+        console.log('Storage initialized successfully');
+        setStorage(instance);
       } catch (error) {
-        console.error('Failed to load cards:', error);
+        console.error('Failed to initialize storage:', error);
       }
     };
+    initStorage();
+  }, []);
 
-    loadCards();
-  }, [deckId, userId, maxNewCards, storage]);
+  const loadStudySession = async (isExtra: boolean = false) => {
+    if (!storage || !deckId) return;
+    
+    console.log('Loading study session for deck:', deckId, isExtra ? '(extra study)' : '(regular study)');
+    setState(prev => ({ ...prev, isLoading: true }));
+    
+    try {
+      // Get all cards for the deck to count total
+      const allCards = await storage.getCardsForDeck(deckId);
+      console.log('Total cards in deck:', allCards.length);
 
-  const showAnswer = () => {
-    setState(prev => ({
-      ...prev,
-      showAnswer: true
-    }));
+      // Get cards studied today
+      const studiedToday = await storage.getCardsStudiedToday(userId, deckId);
+      console.log('Cards studied today:', studiedToday.length);
+
+      // Count new cards studied today
+      const newCardsToday = (await Promise.all(
+        studiedToday.map(async (cardId: string) => {
+          const progress = await storage.getCardProgress(cardId, userId);
+          return progress?.reps === 1;
+        })
+      )).filter(Boolean).length;
+
+      console.log('New cards studied today:', newCardsToday);
+      console.log('Reviews completed today:', studiedToday.length - newCardsToday);
+
+      let dueCards: Flashcard[];
+      if (isExtra) {
+        // For extra study, get all cards that have been studied today
+        dueCards = await storage.getAllDueCards(deckId, userId);
+        console.log('Loading all studied cards for extra practice:', dueCards.length);
+      } else {
+        // For regular study, get new cards and due reviews
+        const remainingNewCards = Math.max(0, 20 - newCardsToday);
+        console.log('Remaining new cards allowed:', remainingNewCards);
+        dueCards = await storage.getDueCards(deckId, userId, remainingNewCards);
+      }
+      console.log('Due cards loaded:', dueCards.length);
+
+      // For extra study, we always start from the beginning
+      // For regular study, we continue from where we left off
+      const startIndex = isExtra ? 0 : (await storage.getLastStudiedIndex(userId, deckId));
+      console.log('Starting at index:', startIndex);
+
+      const sessionComplete = dueCards.length === 0 || (!isExtra && startIndex >= dueCards.length);
+      console.log('Session complete:', sessionComplete);
+      
+      setState(prev => ({ 
+        ...prev, 
+        cards: dueCards,
+        currentIndex: startIndex,
+        showingCard: !sessionComplete,
+        isLoading: false,
+        totalCards: allCards.length,
+        newCardsToday,
+        reviewsToday: studiedToday.length - newCardsToday,
+        sessionComplete,
+        isExtraStudy: isExtra
+      }));
+    } catch (error) {
+      console.error('Failed to load study session:', error);
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
   };
 
-  const gradeCard = async (grade: 1 | 3) => {
+  useEffect(() => {
+    if (storage && deckId) {
+      loadStudySession(false);
+    }
+  }, [deckId, storage]);
+
+  const handleGrade = async (grade: 1 | 3) => {
     if (!storage) return;
 
-    const currentCard = state.cards[state.currentIndex];
-    console.log(`Grading card ${currentCard.id} with grade ${grade}`);
-    
-    // Calculate new FSRS values
-    const lastProgress = await storage.getCardProgress(currentCard.id, userId);
-    console.log('Previous progress:', lastProgress);
-    
-    const fsrsInput = lastProgress || initializeCard();
-    console.log('FSRS input:', fsrsInput);
-    
-    const now = new Date();
-    const timeSinceLastReview = lastProgress 
-      ? Math.floor((now.getTime() - new Date(lastProgress.review_date).getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
+    const { cards, currentIndex, isExtraStudy } = state;
+    const card = cards[currentIndex];
+    if (!card) return;
 
-    const fsrsOutput = calculateFSRS({
-      difficulty: fsrsInput.difficulty,
-      stability: fsrsInput.stability,
-      reps: fsrsInput.reps,
-      lapses: fsrsInput.lapses,
-      lastInterval: fsrsInput.interval,
-      timeSinceLastReview,
-      grade
-    });
+    console.log('Grading card:', card.id, 'with grade:', grade, isExtraStudy ? '(extra study)' : '(regular study)');
     
-    console.log('FSRS output:', {
-      ...fsrsOutput,
-      nextReview: new Date(now.getTime() + fsrsOutput.interval * 24 * 60 * 60 * 1000).toISOString()
-    });
+    // Hide current card
+    setState(prev => ({ ...prev, showingCard: false }));
 
-    // Update progress in storage
-    await storage.updateCardProgress(currentCard.id, userId, fsrsOutput);
-    console.log('Progress updated in storage');
-
-    // Update state
-    setState(prev => {
-      const newIndex = prev.currentIndex + 1;
-      const completed = newIndex >= prev.cards.length;
-
-      return {
-        ...prev,
-        currentIndex: newIndex,
-        showAnswer: false,
-        completed,
-        progress: {
-          reviewed: prev.progress.reviewed + 1,
-          remaining: prev.cards.length - (prev.progress.reviewed + 1),
-          correct: prev.progress.correct + (grade === 3 ? 1 : 0)
-        }
+    try {
+      // Get or initialize progress for this card
+      let progress = await storage.getCardProgress(card.id, userId);
+      const isNewCard = !progress;
+      
+      // Initialize new card or use existing progress
+      const currentProgress = isNewCard ? initializeCard() : progress;
+      
+      if (isNewCard) {
+        console.log('Initializing new card');
+      }
+      console.log('Card progress:', currentProgress);
+      
+      // Calculate FSRS parameters
+      const fsrsInput: FSRSInput = {
+        difficulty: currentProgress.difficulty,
+        stability: currentProgress.stability,
+        reps: currentProgress.reps,
+        lapses: currentProgress.lapses,
+        lastInterval: currentProgress.interval,
+        timeSinceLastReview: currentProgress.review_date 
+          ? Math.floor((Date.now() - new Date(currentProgress.review_date).getTime()) / (1000 * 60 * 60 * 24)) 
+          : 0,
+        grade
       };
-    });
+
+      console.log('FSRS input:', fsrsInput);
+
+      // Calculate new FSRS values
+      const result = calculateFSRS(fsrsInput);
+      console.log('FSRS result:', result);
+      
+      // Update progress in storage
+      const updatedProgress = {
+        ...result,
+        review_date: new Date().toISOString()
+      };
+      await storage.updateCardProgress(card.id, userId, deckId, updatedProgress);
+      console.log('Progress updated in storage');
+
+      // Only update last studied index for regular study
+      if (!isExtraStudy) {
+        await storage.setLastStudiedIndex(userId, deckId, currentIndex);
+        console.log('Last studied index updated:', currentIndex);
+      }
+
+      // Check if we've reached the end of the session
+      const nextIndex = currentIndex + 1;
+      const sessionComplete = nextIndex >= cards.length;
+      console.log('Next index:', nextIndex, 'Session complete:', sessionComplete);
+
+      // Move to next card after a short delay
+      setTimeout(() => {
+        setState(prev => ({
+          ...prev,
+          currentIndex: nextIndex,
+          showingCard: !sessionComplete,
+          newCardsToday: !isExtraStudy && isNewCard ? prev.newCardsToday + 1 : prev.newCardsToday,
+          reviewsToday: !isExtraStudy && !isNewCard ? prev.reviewsToday + 1 : prev.reviewsToday,
+          sessionComplete
+        }));
+      }, 50);
+    } catch (error) {
+      console.error('Failed to process grade:', error);
+      setState(prev => ({ ...prev, showingCard: true }));
+    }
   };
 
-  const reset = () => {
-    setState({
-      cards: [],
-      currentIndex: 0,
-      showAnswer: false,
-      completed: false,
-      progress: {
-        reviewed: 0,
-        remaining: 0,
-        correct: 0
-      }
-    });
+  const restartSession = async () => {
+    console.log('Starting extra study session...');
+    await loadStudySession(true);
   };
 
   return {
-    state,
-    showAnswer,
-    gradeCard,
-    reset
+    currentCard: state.cards[state.currentIndex],
+    showingCard: state.showingCard,
+    isComplete: state.sessionComplete,
+    isLoading: state.isLoading,
+    newCardsToday: state.newCardsToday,
+    reviewsToday: state.reviewsToday,
+    totalCards: state.totalCards,
+    isExtraStudy: state.isExtraStudy,
+    onGrade: handleGrade,
+    onRestart: restartSession,
+    reloadSession: () => loadStudySession(state.isExtraStudy)
   };
 } 

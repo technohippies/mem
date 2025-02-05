@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
 import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from '@/db/orbis';
 import type { Deck, Flashcard } from '@/types/models';
+import { IDBStorage } from '@/services/storage/idb';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
   console.log('Fetching deck:', streamId);
@@ -41,6 +42,8 @@ export const DeckPage = () => {
   const [cards, setCards] = useState<Flashcard[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasStudiedToday, setHasStudiedToday] = useState(false);
+  const userId = 'test-user';
 
   useEffect(() => {
     const loadDeck = async () => {
@@ -50,6 +53,11 @@ export const DeckPage = () => {
         setDeck(deckData);
         const cardsData = await getFlashcards(stream_id);
         setCards(cardsData);
+
+        // Check if user has studied today
+        const storage = await IDBStorage.getInstance();
+        const studied = await storage.hasStudiedToday('user', stream_id);
+        setHasStudiedToday(studied);
       } catch (err) {
         setError('Failed to load deck');
         console.error(err);
@@ -148,12 +156,12 @@ export const DeckPage = () => {
       </div>
 
       {/* Study Button */}
-      <div className="sticky bottom-0 p-4 bg-white border-t">
+      <div className="sticky bottom-0 p-4 bg-neutral-900 border-t">
         <Button 
           className="w-full"
           onClick={() => navigate(`/study/${deck.id}`)}
         >
-          Study Now
+          {hasStudiedToday ? 'Study Again' : 'Study'}
         </Button>
       </div>
     </div>

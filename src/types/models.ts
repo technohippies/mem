@@ -12,7 +12,12 @@ export interface Deck {
   id: string;
   name: string;
   description?: string;
+  slug: string;
   image_hash?: string;
+  image_url?: string;
+  stream_id?: string;
+  tags: string;
+  is_admin: boolean;
   created_at: string;
   updated_at: string;
   category: string;
@@ -31,7 +36,7 @@ export interface Flashcard {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  language?: string;
+  language: string;
   audio_tts_cid?: string;
   back_image_cid?: string;
   front_image_cid?: string;

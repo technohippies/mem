@@ -1,7 +1,88 @@
 import type { Deck, Flashcard } from '@/types/models';
 import type { FSRSOutput } from '../fsrs';
 import type { StorageInterface } from './interface';
-import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from '@/db/orbis';
+import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, PROGRESS_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from '@/db/orbis';
+
+// Singleton instance to track storage session
+let storageSession: Promise<void> | null = null;
+
+export async function initStorageSession() {
+  if (!storageSession) {
+    storageSession = (async () => {
+      try {
+        console.log('Initializing Orbis storage session...');
+        
+        // Get the current user's DID from the auth result
+        const details = await db.getConnectedUser();
+        if (!details) {
+          throw new Error('No authenticated user found');
+        }
+        
+        // Get the user's DID from the details object
+        const did = (details as any).id;
+        if (!did) {
+          throw new Error('No DID found in auth result');
+        }
+        console.log('Current user DID:', did);
+
+        // Create a test write to initialize the session
+        console.log('Performing test write to Orbis...');
+        const result = await db
+          .insert(PROGRESS_MODEL)
+          .value({
+            user_id: did,
+            deck_id: 'test',
+            card_id: 'test',
+            next_review: new Date().toISOString(),
+            review_date: new Date().toISOString(),
+            difficulty: 0,
+            stability: 0,
+            retrievability: 0,
+            reps: 0,
+            lapses: 0,
+            interval: 0
+          })
+          .context(CONTEXT_ID)
+          .run();
+
+        console.log('Test write successful:', result);
+        console.log('Orbis storage session initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize storage session:', error);
+        storageSession = null; // Reset so we can try again
+        throw error;
+      }
+    })();
+  }
+  return storageSession;
+}
+
+export async function clearStorageSession() {
+  console.log('Clearing Orbis storage session...');
+  try {
+    await db.disconnectUser();
+    storageSession = null;
+    console.log('Orbis storage session cleared successfully');
+  } catch (error) {
+    console.error('Failed to clear storage session:', error);
+    throw error;
+  }
+}
+
+// Helper function to get user's DID
+async function getUserDID(): Promise<string> {
+  const details = await db.getConnectedUser();
+  if (!details) {
+    throw new Error('No authenticated user found');
+  }
+  
+  const did = (details as any).id;
+  if (!did) {
+    throw new Error('No DID found in auth result');
+  }
+  
+  return did;
+}
 
 export class OrbisStorage implements StorageInterface {
     async getDeckBySlug(slug: string): Promise<Deck | null> {
@@ -15,6 +96,10 @@ export class OrbisStorage implements StorageInterface {
 
         if (rows.length === 0) return null;
         return orbisToAppDeck(rows[0] as OrbisDeck);
+    }
+
+    async getDeckByStreamId(streamId: string): Promise<Deck | null> {
+        return this.getDeckBySlug(streamId); // They're the same in our implementation
     }
 
     async getAllDecks(): Promise<Deck[]> {
@@ -53,15 +138,12 @@ export class OrbisStorage implements StorageInterface {
         return rows.map(row => orbisToAppDeck(row as OrbisDeck));
     }
 
-    async addDeckToUser(userId: string, deckId: string): Promise<void> {
-        // In Orbis, this would be handled by the controller field
-        // No need for a separate user_decks table
+    // These methods are no-ops in Orbis as ownership is handled by the controller field
+    async addDeckToUser(): Promise<void> {
         return Promise.resolve();
     }
 
-    async removeDeckFromUser(userId: string, deckId: string): Promise<void> {
-        // In Orbis, deck ownership is handled by the controller field
-        // No need for a separate user_decks table
+    async removeDeckFromUser(): Promise<void> {
         return Promise.resolve();
     }
 
