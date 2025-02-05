@@ -11,6 +11,7 @@ import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 import { Loader } from '@/components/ui/loader/Loader';
+import { CaretLeft } from '@phosphor-icons/react';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -398,16 +399,17 @@ export const StudyPage = () => {
     <AuthWrapper>
       <div className="flex flex-col min-h-screen">
         {/* Header */}
-        <div className="p-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="p-4 border-b bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
           <div className="flex justify-between items-center max-w-2xl mx-auto">
             <Button 
               variant="ghost" 
               onClick={() => navigate(`/decks/${stream_id}`)}
+              className="text-neutral-400 hover:text-neutral-200"
             >
-              ← Back to Deck
+              <CaretLeft size={24} weight="fill" />
             </Button>
             
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-neutral-400">
               {isExtraStudy ? (
                 <p>Study Again Mode</p>
               ) : (
