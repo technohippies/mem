@@ -15,7 +15,7 @@ interface StudySessionState {
   isExtraStudy: boolean;
 }
 
-export function useStudySession(deckId: string, isInitialized: boolean = false) {
+export function useStudySession(deckId: string, isInitialized: boolean = false, initialMode: boolean = false) {
   const [state, setState] = useState<StudySessionState>({
     cards: [],
     currentIndex: 0,
@@ -25,7 +25,7 @@ export function useStudySession(deckId: string, isInitialized: boolean = false) 
     newCardsToday: 0,
     reviewsToday: 0,
     sessionComplete: false,
-    isExtraStudy: false
+    isExtraStudy: initialMode
   });
 
   const [storage, setStorage] = useState<IDBStorage | null>(null);
@@ -118,9 +118,9 @@ export function useStudySession(deckId: string, isInitialized: boolean = false) 
 
   useEffect(() => {
     if (storage && deckId && isInitialized) {
-      loadStudySession(false);
+      loadStudySession(initialMode);
     }
-  }, [deckId, storage, isInitialized]);
+  }, [deckId, storage, isInitialized, initialMode]);
 
   const handleGrade = async (grade: 1 | 3) => {
     if (!storage) return;

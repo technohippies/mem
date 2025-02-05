@@ -89,7 +89,7 @@ export const DeckPage = () => {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Deck Info */}
-      <div className="flex flex-col gap-4 p-4 border-b">
+      <div className="flex flex-col gap-4 p-4">
         <div className="flex gap-4 items-start">
           {deck.image_hash && (
             <img 
@@ -101,9 +101,9 @@ export const DeckPage = () => {
           <div className="flex flex-col gap-2 text-left">
             <h1 className="text-2xl font-bold">{deck.name}</h1>
             {deck.description && (
-              <p className="text-gray-600">{deck.description}</p>
+              <p className="text-neutral-100">{deck.description}</p>
             )}
-            <div className="flex flex-wrap gap-2 text-sm text-gray-600">
+            <div className="flex flex-wrap gap-2 text-sm text-neutral-400">
               <span>Category: {deck.category}</span>
               <span>•</span>
               <span>Language: {deck.language}</span>
@@ -125,7 +125,7 @@ export const DeckPage = () => {
           {cards.map((card) => (
             <div 
               key={card.id}
-              className="p-4 border rounded-lg flex flex-col gap-1"
+              className="p-4 border border-neutral-700 rounded-lg flex flex-col gap-1"
             >
               <div className="flex gap-4 items-center">
                 {card.front_image_cid && (
@@ -140,7 +140,7 @@ export const DeckPage = () => {
                   <audio controls src={card.audio_tts_cid} className="ml-auto h-8" />
                 )}
               </div>
-              <div className="flex gap-4 items-center text-gray-600">
+              <div className="flex gap-4 items-center text-neutral-400">
                 {card.back_image_cid && (
                   <img 
                     src={card.back_image_cid} 
@@ -160,7 +160,7 @@ export const DeckPage = () => {
         <Button 
           variant="secondary"
           className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={() => navigate(`/study/${deck.id}`)}
+          onClick={() => navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`)}
         >
           {hasStudiedToday ? 'Study Again' : 'Study'}
         </Button>

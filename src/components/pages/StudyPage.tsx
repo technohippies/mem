@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { StudyCard } from '@/components/core/StudyCard';
 import { useStudySession } from '@/hooks/useStudySession';
 import { IDBStorage } from '@/services/storage/idb';
@@ -14,6 +14,7 @@ import { Loader } from '@/components/ui/loader/Loader';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export const StudyPage = () => {
     onGrade,
     onRestart,
     reloadSession 
-  } = useStudySession(stream_id || '', isInitialized);
+  } = useStudySession(stream_id || '', isInitialized, searchParams.get('mode') === 'extra');
   const { toast } = useToast();
   const { isAuthenticated, isCeramicConnected, userAddress } = useAuth();
   const appKit = useAppKit();
