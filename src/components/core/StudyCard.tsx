@@ -25,8 +25,8 @@ export const StudyCard = ({
   };
 
   return (
-    <div className={cn("flex flex-col min-h-[calc(100vh-theme(spacing.16))]", className)}>
-      <div className="flex-grow">
+    <div className={cn("flex flex-col h-full", className)}>
+      <div className="flex-grow overflow-y-auto p-4">
         <FlashCard>
           {visible && (isFlipped ? (
             <div className="flex flex-col gap-4 items-center">
