@@ -43,7 +43,6 @@ export const DeckPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasStudiedToday, setHasStudiedToday] = useState(false);
-  const userId = 'test-user';
 
   useEffect(() => {
     const loadDeck = async () => {
@@ -156,9 +155,10 @@ export const DeckPage = () => {
       </div>
 
       {/* Study Button */}
-      <div className="sticky bottom-0 p-4 bg-neutral-900 border-t">
+      <div className="sticky bottom-0 p-4 bg-neutral-900 border-t border-neutral-800">
         <Button 
-          className="w-full"
+          variant="secondary"
+          className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
           onClick={() => navigate(`/study/${deck.id}`)}
         >
           {hasStudiedToday ? 'Study Again' : 'Study'}

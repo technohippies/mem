@@ -31,6 +31,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "fake-indexeddb": "^6.0.0",
+    "ldrs": "^1.0.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.1.5",
@@ -72,4 +73,3 @@
     "vite-tsconfig-paths": "^5.1.4"
   }
 }
-

@@ -7,7 +7,7 @@ const ORBIS_ENVIRONMENT_ID = import.meta.env.VITE_ORBIS_ENVIRONMENT_ID || 'did:p
 const ORBIS_CONTEXT_ID = import.meta.env.VITE_ORBIS_CONTEXT_ID || 'kjzl6kcym7w8y6v8xczuys0vm27mcatj3acgc1zjk0stqp9ac457uwzm2lbrzwm';
 const ORBIS_DECK_MODEL_ID = import.meta.env.VITE_ORBIS_DECK_MODEL_ID || 'kjzl6hvfrbw6c9ksaldax42ewyk307vzy8vjnm8wdhlm5d2vnoy66xbptb0tqr4';
 const ORBIS_FLASHCARD_MODEL_ID = import.meta.env.VITE_ORBIS_FLASHCARD_MODEL_ID || 'kjzl6hvfrbw6c9s4bl3dcow5y87johzugtlevmlcqko8s7ymdxg0zo8ncrucpzk';
-const ORBIS_PROGRESS_MODEL_ID = import.meta.env.VITE_ORBIS_PROGRESS_MODEL_ID || 'kjzl6hvfrbw6c9s4bl3dcow5y87johzugtlevmlcqko8s7ymdxg0zo8ncrucpzk';
+const ORBIS_PROGRESS_MODEL_ID = import.meta.env.VITE_ORBIS_USER_PROGRESS || 'kjzl6hvfrbw6c7mg7px3dvurfz3m0wslwo2noo2wz8kkg84sm9dmwov3kepbqjy';
 
 console.log('Initializing OrbisDB...');
 export const db = new OrbisDB({
