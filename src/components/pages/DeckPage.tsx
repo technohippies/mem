@@ -46,6 +46,7 @@ export const DeckPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasStudiedToday, setHasStudiedToday] = useState(false);
+  const [hasUnfinishedSession, setHasUnfinishedSession] = useState(false);
   const [cardStats, setCardStats] = useState({
     newCount: 0,
     reviewCount: 0,
@@ -77,6 +78,10 @@ export const DeckPage = () => {
         const studiedToday = await storage.getCardsStudiedToday('user', stream_id);
         console.log('Cards studied today:', studiedToday);
         
+        // In a regular study session, all cards are new cards (we don't mix new and review cards)
+        // So if we've studied 20 cards today, they were all new cards
+        const newCardsStudiedToday = studiedToday.length;
+
         // Calculate stats
         const newCards = cardsData.filter(card => {
           const progress = cardProgresses[cardsData.indexOf(card)];
@@ -94,12 +99,33 @@ export const DeckPage = () => {
           return progress && !isStudiedToday && progress.review_date && new Date(progress.review_date) <= new Date();
         });
 
+        // Check for unfinished session
+        const lastStudiedIndex = await storage.getLastStudiedIndex('user', stream_id);
+        const hasUnfinished = lastStudiedIndex > 0 && 
+          newCardsStudiedToday < 20 &&  // If we've hit our daily limit, we're not "unfinished"
+          (newCards.length > 0 || dueCards.length > 0);  // And we have cards to study
+
+        console.log('Session state:', {
+          lastStudiedIndex,
+          newCardsStudiedToday,
+          hasNewCards: newCards.length > 0,
+          hasDueCards: dueCards.length > 0,
+          hasUnfinished,
+          hasStudiedToday
+        });
+
+        setHasUnfinishedSession(hasUnfinished);
+
         console.log('Stats breakdown:', {
           total: cardsData.length,
           new: `${newCards.length} (never studied cards)`,
           review: `${reviewCards.length} (studied today)`,
           due: `${dueCards.length} (cards due for review)`,
-          studiedToday: studiedToday.length
+          studiedToday: studiedToday.length,
+          newCardsStudiedToday,
+          lastStudiedIndex,
+          hasUnfinished,
+          buttonText: hasUnfinished ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'
         });
         
         setCardStats({
@@ -253,7 +279,7 @@ export const DeckPage = () => {
             navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
           }}
         >
-          {hasStudiedToday ? 'Study Again' : 'Study'}
+          {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}
         </Button>
       </div>
     </div>

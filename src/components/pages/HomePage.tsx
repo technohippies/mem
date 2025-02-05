@@ -69,7 +69,7 @@ const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) 
       to={`/decks/${deck.id}`}
       className="w-full"
     >
-      <div className="w-full p-4 rounded-lg border border-neutral-800 hover:border-neutral-700 transition-colors bg-neutral-900/50 hover:bg-neutral-900 flex gap-4 items-start">
+      <div className="w-full p-4 rounded-lg border border-neutral-900 bg-neutral-700/20 hover:bg-neutral-700/30 transition-colors flex gap-4 items-start">
         {deck.image_hash && (
           <img 
             src={deck.image_hash} 
