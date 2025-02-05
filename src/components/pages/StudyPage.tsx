@@ -3,20 +3,20 @@ import { StudyCard } from '@/components/core/StudyCard';
 import { useStudySession } from '@/hooks/useStudySession';
 import { IDBStorage } from '@/services/storage/idb';
 import { useState, useEffect } from 'react';
-import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard } from '@/db/orbis';
+import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard, PROGRESS_MODEL } from '@/db/orbis';
 import { Button } from '@/components/ui/button/Button';
 import { useToast } from '@/components/ui/toast/useToast';
-import { pushProgressToOrbis } from '@/services/sync';
-import type { FSRSOutput } from '@/services/fsrs';
 import { useAuth } from '@/contexts/AuthContext';
-import { useAppKit } from '@reown/appkit/react';
+import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
+import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
   const navigate = useNavigate();
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showLoading, setShowLoading] = useState(false);
   const { 
     currentCard, 
     showingCard, 
@@ -30,8 +30,19 @@ export const StudyPage = () => {
     reloadSession 
   } = useStudySession(stream_id || '');
   const { toast } = useToast();
-  const { isAuthenticated, userAddress } = useAuth();
+  const { isAuthenticated, isCeramicConnected, userAddress } = useAuth();
   const appKit = useAppKit();
+  const { isConnected } = useAppKitAccount();
+
+  // Show loading state after a small delay
+  useEffect(() => {
+    if (!isInitialized || isLoading) {
+      const timer = setTimeout(() => setShowLoading(true), 500);
+      return () => clearTimeout(timer);
+    } else {
+      setShowLoading(false);
+    }
+  }, [isInitialized, isLoading]);
 
   // Initialize cards in storage
   useEffect(() => {
@@ -120,15 +131,93 @@ export const StudyPage = () => {
         .run();
 
       const cards = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+      console.log('Syncing progress for cards:', cards);
+
+      // Get existing progress from Orbis
+      const { rows: existingProgress } = await db
+        .select()
+        .from(PROGRESS_MODEL)
+        .where({ deck_id: stream_id })
+        .context(CONTEXT_ID)
+        .run();
+
+      console.log('Existing progress in Orbis:', existingProgress);
+
+      // Get local progress
       const progressPromises = cards.map(async card => {
         const progress = await storage.getCardProgress(card.id, 'user');
-        return progress ? { ...progress, card_id: card.id } : null;
+        if (!progress) return null;
+
+        // Handle dates safely
+        const last_review = typeof progress.review_date === 'string'
+          ? progress.review_date
+          : new Date().toISOString();
+        
+        const next_review = typeof progress.next_review === 'string'
+          ? progress.next_review
+          : new Date().toISOString();
+
+        // Format progress data according to Orbis schema
+        // Only include fields that are in the model schema
+        return {
+          reps: progress.reps,
+          lapses: progress.lapses,
+          stability: progress.stability,
+          difficulty: progress.difficulty,
+          last_review: last_review,
+          next_review: next_review,
+          correct_reps: progress.reps - progress.lapses,  // Calculate correct reps
+          flashcard_id: card.id,
+          last_interval: progress.interval,
+          retrievability: progress.retrievability
+        };
       });
       
       const progressToSync = (await Promise.all(progressPromises))
-        .filter((p): p is FSRSOutput & { card_id: string } => p !== null);
+        .filter((p): p is NonNullable<typeof p> => p !== null);
 
-      await pushProgressToOrbis(userAddress, stream_id, progressToSync);
+      console.log('Local progress to sync:', progressToSync);
+
+      // First, handle updates for existing entries
+      const updatesPromises = progressToSync
+        .filter(progress => existingProgress.find(p => p.flashcard_id === progress.flashcard_id))
+        .map(async progress => {
+          const existingEntry = existingProgress.find(p => p.flashcard_id === progress.flashcard_id);
+          if (!existingEntry) return; // TypeScript safety
+
+          console.log('Updating existing progress for card:', progress.flashcard_id);
+          return db
+            .update(existingEntry.stream_id)
+            .set(progress)
+            .run();
+        });
+
+      // Wait for all updates to complete
+      await Promise.all(updatesPromises);
+
+      // Then bulk insert new entries
+      const newEntries = progressToSync
+        .filter(progress => !existingProgress.find(p => p.flashcard_id === progress.flashcard_id));
+
+      if (newEntries.length > 0) {
+        console.log('Bulk inserting progress for', newEntries.length, 'cards');
+        const { success, errors } = await db
+          .insertBulk(PROGRESS_MODEL)
+          .values(newEntries)
+          .context(CONTEXT_ID)
+          .run();
+
+        if (errors.length) {
+          console.error('Errors occurred during bulk insert:', errors);
+          toast({
+            title: "Warning",
+            description: `${success.length} entries succeeded, ${errors.length} failed`,
+            variant: "destructive"
+          });
+        } else {
+          console.log('Bulk insert successful for all entries');
+        }
+      }
       
       toast({
         title: "Success",
@@ -156,7 +245,7 @@ export const StudyPage = () => {
     );
   }
 
-  if (!isInitialized || isLoading) {
+  if (showLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen p-4">
         <p>Loading cards...</p>
@@ -175,9 +264,61 @@ export const StudyPage = () => {
           <p className="text-sm text-gray-600">New cards: {newCardsToday}/20</p>
           <p className="text-sm text-gray-600">Reviews: {reviewsToday}</p>
         </div>
-        <Button onClick={onRestart}>
-          {isExtraStudy ? 'Study Again' : 'Extra Study'}
-        </Button>
+        
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          {!isConnected ? (
+            <Button 
+              variant="outline"
+              onClick={() => appKit?.open()}
+            >
+              Connect Wallet
+            </Button>
+          ) : !isCeramicConnected ? (
+            <Button 
+              variant="outline"
+              onClick={async () => {
+                try {
+                  if (!window.ethereum) {
+                    toast({
+                      title: "Error",
+                      description: "No Ethereum provider found",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+                  const auth = new OrbisEVMAuth(window.ethereum as any);
+                  const result = await db.connectUser({ auth });
+                  if (result) {
+                    toast({
+                      title: "Success",
+                      description: "Connected to Ceramic network"
+                    });
+                  }
+                } catch (error) {
+                  console.error('Failed to connect to Ceramic:', error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to connect to Ceramic network",
+                    variant: "destructive"
+                  });
+                }
+              }}
+            >
+              Connect to Ceramic
+            </Button>
+          ) : (
+            <Button 
+              variant="outline"
+              onClick={handleSync}
+            >
+              Save Progress to Cloud
+            </Button>
+          )}
+          
+          <Button onClick={onRestart}>
+            {isExtraStudy ? 'Study Again' : 'Extra Study'}
+          </Button>
+        </div>
       </div>
     );
   }
@@ -225,7 +366,7 @@ export const StudyPage = () => {
         </div>
 
         {/* Study Area */}
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4 bg-neutral-900">
           <div className="max-w-2xl mx-auto">
             <StudyCard
               card={currentCard}
