@@ -3,6 +3,12 @@ import type { Flashcard } from '@/types/models';
 import { calculateFSRS, type FSRSInput, initializeCard } from '@/services/fsrs';
 import { IDBStorage } from '@/services/storage/idb';
 
+interface FailedCard {
+  cardId: string;
+  failedCount: number;
+  lastSeenIndex: number;
+}
+
 interface StudySessionState {
   cards: Flashcard[];
   currentIndex: number;
@@ -13,7 +19,16 @@ interface StudySessionState {
   reviewsToday: number;
   sessionComplete: boolean;
   isExtraStudy: boolean;
+  failedCards: FailedCard[];  // Track cards that were marked "Again"
 }
+
+// How many cards to wait before showing a failed card again
+const getDelayForFailCount = (failCount: number): number => {
+  // First failure: 3 cards
+  // Second failure: 8 cards
+  // Third+ failure: 15 cards
+  return failCount === 1 ? 3 : failCount === 2 ? 8 : 15;
+};
 
 export function useStudySession(deckId: string, isInitialized: boolean = false, initialMode: boolean = false) {
   const [state, setState] = useState<StudySessionState>({
@@ -25,7 +40,8 @@ export function useStudySession(deckId: string, isInitialized: boolean = false, 
     newCardsToday: 0,
     reviewsToday: 0,
     sessionComplete: false,
-    isExtraStudy: initialMode
+    isExtraStudy: initialMode,
+    failedCards: []
   });
 
   const [storage, setStorage] = useState<IDBStorage | null>(null);
@@ -122,6 +138,29 @@ export function useStudySession(deckId: string, isInitialized: boolean = false, 
     }
   }, [deckId, storage, isInitialized, initialMode]);
 
+  // Helper to get the next card to show
+  const getNextCard = (): number => {
+    const { currentIndex, cards, failedCards } = state;
+    
+    // Check if any failed cards are due to be shown
+    const currentPosition = currentIndex;
+    const dueFailedCard = failedCards.find(fc => {
+      const delay = getDelayForFailCount(fc.failedCount);
+      return currentPosition - fc.lastSeenIndex >= delay;
+    });
+
+    if (dueFailedCard) {
+      // Find the card's position in the deck
+      const cardIndex = cards.findIndex(c => c.id === dueFailedCard.cardId);
+      console.log(`Showing failed card ${dueFailedCard.cardId} (failed ${dueFailedCard.failedCount} times)`);
+      return cardIndex;
+    }
+
+    // If no failed cards are due, move to next card
+    const nextIndex = currentIndex + 1;
+    return nextIndex >= cards.length ? 0 : nextIndex;
+  };
+
   const handleGrade = async (grade: 1 | 3) => {
     if (!storage) return;
 
@@ -174,26 +213,61 @@ export function useStudySession(deckId: string, isInitialized: boolean = false, 
       await storage.updateCardProgress(card.id, userId, deckId, updatedProgress);
       console.log('Progress updated in storage');
 
+      // Handle failed cards (grade === 1)
+      let updatedFailedCards = [...state.failedCards];
+      if (grade === 1) {
+        const existingFailedCard = updatedFailedCards.find(fc => fc.cardId === card.id);
+        if (existingFailedCard) {
+          // Card failed again, increment counter
+          updatedFailedCards = updatedFailedCards.map(fc =>
+            fc.cardId === card.id
+              ? { ...fc, failedCount: fc.failedCount + 1, lastSeenIndex: currentIndex }
+              : fc
+          );
+          console.log(`Card ${card.id} failed again, count: ${existingFailedCard.failedCount + 1}`);
+        } else {
+          // First time failing this card
+          updatedFailedCards.push({
+            cardId: card.id,
+            failedCount: 1,
+            lastSeenIndex: currentIndex
+          });
+          console.log(`Card ${card.id} failed for the first time`);
+        }
+      } else if (grade === 3) {
+        // Card passed, remove from failed cards if present
+        updatedFailedCards = updatedFailedCards.filter(fc => fc.cardId !== card.id);
+        if (updatedFailedCards.length !== state.failedCards.length) {
+          console.log(`Card ${card.id} passed, removed from failed cards`);
+        }
+      }
+
       // Only update last studied index for regular study
       if (!isExtraStudy) {
         await storage.setLastStudiedIndex(userId, deckId, currentIndex);
         console.log('Last studied index updated:', currentIndex);
       }
 
-      // Check if we've reached the end of the session
-      const nextIndex = currentIndex + 1;
-      // Session is complete when we've finished grading the current card and it's the last one
-      const sessionComplete = currentIndex >= cards.length - 1;
-      console.log('Current index:', currentIndex, 'Cards length:', cards.length, 'Session complete:', sessionComplete);
+      // Get next card
+      const nextIndex = getNextCard();
+      
+      // Check if session is complete (no more new cards and no failed cards to review)
+      const sessionComplete = nextIndex === 0 && updatedFailedCards.length === 0;
+      console.log('Session state:', {
+        nextIndex,
+        failedCards: updatedFailedCards.length,
+        sessionComplete
+      });
 
-      // Move to next card and show it if not complete
+      // Update state
       setState(prev => ({
         ...prev,
         currentIndex: nextIndex,
         showingCard: !sessionComplete,
         newCardsToday: !isExtraStudy && isNewCard ? prev.newCardsToday + 1 : prev.newCardsToday,
         reviewsToday: !isExtraStudy && !isNewCard ? prev.reviewsToday + 1 : prev.reviewsToday,
-        sessionComplete
+        sessionComplete,
+        failedCards: updatedFailedCards
       }));
     } catch (error) {
       console.error('Failed to process grade:', error);
