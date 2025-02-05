@@ -98,43 +98,65 @@ export class IDBStorage {
 
   private async init() {
     return new Promise<void>((resolve, reject) => {
+      console.log('[IDBStorage] Initializing database...');
       const request = indexedDB.open('anki-farcaster', 1);
 
       request.onerror = () => {
+        console.error('[IDBStorage] Failed to open IndexedDB:', request.error);
         reject(new Error('Failed to open IndexedDB'));
       };
 
       request.onsuccess = () => {
+        console.log('[IDBStorage] Database opened successfully');
         this.db = request.result;
+        
+        // Log available object stores
+        console.log('[IDBStorage] Available stores:', Array.from(this.db.objectStoreNames));
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
+        console.log('[IDBStorage] Database upgrade needed');
         const db = (event.target as IDBOpenDBRequest).result;
 
         // Create object stores with indexes
-        const decks = db.createObjectStore('decks', { keyPath: 'stream_id' });
-        decks.createIndex('controller', 'controller', { unique: false });
-        decks.createIndex('category', 'category', { unique: false });
-        decks.createIndex('language', 'language', { unique: false });
+        if (!db.objectStoreNames.contains('decks')) {
+          console.log('[IDBStorage] Creating decks store');
+          const decks = db.createObjectStore('decks', { keyPath: 'stream_id' });
+          decks.createIndex('controller', 'controller', { unique: false });
+          decks.createIndex('category', 'category', { unique: false });
+          decks.createIndex('language', 'language', { unique: false });
+        }
 
-        const cards = db.createObjectStore('cards', { keyPath: 'stream_id' });
-        cards.createIndex('deck_id', 'deck_id', { unique: false });
-        cards.createIndex('sort_order', 'sort_order', { unique: false });
+        if (!db.objectStoreNames.contains('cards')) {
+          console.log('[IDBStorage] Creating cards store');
+          const cards = db.createObjectStore('cards', { keyPath: 'stream_id' });
+          cards.createIndex('deck_id', 'deck_id', { unique: false });
+          cards.createIndex('sort_order', 'sort_order', { unique: false });
+        }
 
-        const progress = db.createObjectStore('progress', { keyPath: ['user_id', 'card_id'] });
-        progress.createIndex('user_id', 'user_id', { unique: false });
-        progress.createIndex('card_id', 'card_id', { unique: false });
-        progress.createIndex('review_date', 'review_date', { unique: false });
+        if (!db.objectStoreNames.contains('progress')) {
+          console.log('[IDBStorage] Creating progress store');
+          const progress = db.createObjectStore('progress', { keyPath: ['user_id', 'card_id'] });
+          progress.createIndex('user_id', 'user_id', { unique: false });
+          progress.createIndex('card_id', 'card_id', { unique: false });
+          progress.createIndex('review_date', 'review_date', { unique: false });
+        }
 
-        const studySessions = db.createObjectStore('study_sessions', { keyPath: 'id' });
-        studySessions.createIndex('user_id', 'user_id', { unique: false });
-        studySessions.createIndex('deck_id', 'deck_id', { unique: false });
-        studySessions.createIndex('date', 'date', { unique: false });
+        if (!db.objectStoreNames.contains('study_sessions')) {
+          console.log('[IDBStorage] Creating study_sessions store');
+          const studySessions = db.createObjectStore('study_sessions', { keyPath: 'id' });
+          studySessions.createIndex('user_id', 'user_id', { unique: false });
+          studySessions.createIndex('deck_id', 'deck_id', { unique: false });
+          studySessions.createIndex('date', 'date', { unique: false });
+        }
 
-        const authState = db.createObjectStore('auth_state', { keyPath: 'id' });
-        authState.createIndex('address', 'address', { unique: false });
-        authState.createIndex('timestamp', 'timestamp', { unique: false });
+        if (!db.objectStoreNames.contains('auth_state')) {
+          console.log('[IDBStorage] Creating auth_state store');
+          const authState = db.createObjectStore('auth_state', { keyPath: 'id' });
+          authState.createIndex('address', 'address', { unique: false });
+          authState.createIndex('timestamp', 'timestamp', { unique: false });
+        }
       };
     });
   }
@@ -151,8 +173,66 @@ export class IDBStorage {
   }
 
   async getAllDecks(): Promise<Deck[]> {
-    // TODO: Implement this
-    return [];
+    if (!this.db) throw new Error('Database not initialized');
+    console.log('[IDBStorage] Getting all decks...');
+    console.log('[IDBStorage] Available stores:', Array.from(this.db.objectStoreNames));
+
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('[IDBStorage] Creating transaction...');
+        const transaction = this.db!.transaction('decks', 'readonly');
+        
+        transaction.onerror = (event) => {
+          console.error('[IDBStorage] Transaction error:', event);
+        };
+
+        transaction.oncomplete = () => {
+          console.log('[IDBStorage] Transaction completed');
+        };
+
+        console.log('[IDBStorage] Getting store...');
+        const store = transaction.objectStore('decks');
+        console.log('[IDBStorage] Store accessed:', store.name);
+        console.log('[IDBStorage] Store indexes:', Array.from(store.indexNames));
+
+        console.log('[IDBStorage] Requesting all decks...');
+        const request = store.getAll();
+
+        request.onerror = () => {
+          console.error('[IDBStorage] Failed to get decks from IndexedDB:', request.error);
+          reject(new Error('Failed to get decks'));
+        };
+
+        request.onsuccess = () => {
+          console.log('[IDBStorage] Raw decks from IndexedDB:', request.result);
+          const decks = request.result.map(deck => {
+            console.log('[IDBStorage] Processing deck:', deck);
+            return {
+              id: deck.stream_id,
+              name: deck.name,
+              description: deck.description,
+              category: deck.category,
+              language: deck.language,
+              price: deck.price,
+              image_hash: deck.image_cid,
+              is_public: deck.is_public,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              forked_from: deck.forked_from,
+              slug: deck.stream_id,
+              tags: '',
+              is_admin: false,
+              stream_id: deck.stream_id
+            } as Deck;
+          });
+          console.log('[IDBStorage] Processed decks:', decks);
+          resolve(decks);
+        };
+      } catch (error) {
+        console.error('[IDBStorage] Error in getAllDecks:', error);
+        reject(error);
+      }
+    });
   }
 
   async getAdminDecks(): Promise<Deck[]> {
@@ -161,8 +241,59 @@ export class IDBStorage {
   }
 
   async getUserDecks(userId: string): Promise<Deck[]> {
-    // TODO: Implement this
-    return [];
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['study_sessions', 'decks'], 'readonly');
+      const sessionsStore = transaction.objectStore('study_sessions');
+      const decksStore = transaction.objectStore('decks');
+      const sessionsIndex = sessionsStore.index('user_id');
+      
+      const request = sessionsIndex.getAll(userId);
+
+      request.onerror = () => {
+        reject(new Error('Failed to get user study sessions'));
+      };
+
+      request.onsuccess = async () => {
+        const sessions = request.result;
+        const uniqueDeckIds = [...new Set(sessions.map(s => s.deck_id))];
+        
+        // Fetch all unique decks
+        const deckPromises = uniqueDeckIds.map(deckId => 
+          new Promise<Deck>((resolve, reject) => {
+            const deckRequest = decksStore.get(deckId);
+            deckRequest.onerror = () => reject(new Error(`Failed to get deck ${deckId}`));
+            deckRequest.onsuccess = () => {
+              const deck = deckRequest.result;
+              if (deck) {
+                resolve({
+                  id: deck.stream_id,
+                  name: deck.name,
+                  description: deck.description,
+                  category: deck.category,
+                  language: deck.language,
+                  price: deck.price,
+                  image_hash: deck.image_cid,
+                  is_public: deck.is_public,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                  forked_from: deck.forked_from
+                });
+              } else {
+                reject(new Error(`Deck ${deckId} not found`));
+              }
+            };
+          }).catch(err => {
+            console.error(`Error fetching deck ${deckId}:`, err);
+            return null;
+          })
+        );
+
+        const decks = await Promise.all(deckPromises);
+        resolve(decks.filter((d): d is Deck => d !== null));
+      };
+    });
   }
 
   // Card operations
@@ -456,7 +587,58 @@ export class IDBStorage {
 
   // Storage operations
   async storeDeck(deck: Deck): Promise<void> {
-    // TODO: Implement this
+    if (!this.db) throw new Error('Database not initialized');
+
+    console.log('[IDBStorage] Storing deck in IndexedDB:', deck);
+    console.log('[IDBStorage] Available stores:', Array.from(this.db.objectStoreNames));
+
+    return new Promise((resolve, reject) => {
+      try {
+        console.log('[IDBStorage] Creating transaction...');
+        const transaction = this.db!.transaction('decks', 'readwrite');
+        
+        transaction.onerror = (event) => {
+          console.error('[IDBStorage] Transaction error:', event);
+        };
+
+        transaction.oncomplete = () => {
+          console.log('[IDBStorage] Transaction completed');
+        };
+
+        console.log('[IDBStorage] Getting store...');
+        const store = transaction.objectStore('decks');
+        console.log('[IDBStorage] Store accessed:', store.name);
+
+        const deckData = {
+          stream_id: deck.id,
+          controller: '',
+          name: deck.name,
+          description: deck.description || '',
+          category: deck.category,
+          language: deck.language,
+          price: deck.price,
+          image_cid: deck.image_hash || '',
+          is_public: deck.is_public,
+          forked_from: deck.forked_from || ''
+        };
+
+        console.log('[IDBStorage] Deck data to store:', deckData);
+        const request = store.put(deckData);
+
+        request.onerror = () => {
+          console.error('[IDBStorage] Failed to store deck:', request.error);
+          reject(new Error('Failed to store deck'));
+        };
+
+        request.onsuccess = () => {
+          console.log('[IDBStorage] Successfully stored deck:', deck.id);
+          resolve();
+        };
+      } catch (error) {
+        console.error('[IDBStorage] Error in storeDeck:', error);
+        reject(error);
+      }
+    });
   }
 
   async storeCard(card: Flashcard): Promise<void> {

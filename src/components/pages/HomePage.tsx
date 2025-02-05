@@ -3,6 +3,10 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
 import { db, CONTEXT_ID, DECK_MODEL, orbisToAppDeck, type OrbisDeck } from '@/db/orbis';
 import type { Deck } from '@/types/models';
+import { IDBStorage } from '@/services/storage/idb';
+import { Loader } from '@/components/ui/loader/Loader';
+import { Badge } from '@/components/ui/badge/Badge';
+import { Tag, Translate } from '@phosphor-icons/react';
 
 const getAvailableDecks = async (): Promise<Deck[]> => {
   console.log('Fetching decks from OrbisDB...');
@@ -17,16 +21,69 @@ const getAvailableDecks = async (): Promise<Deck[]> => {
   return rows.map(row => orbisToAppDeck(row as OrbisDeck));
 };
 
+const DeckCard = ({ deck }: { deck: Deck }) => (
+  <Link 
+    key={deck.id} 
+    to={`/decks/${deck.id}`}
+    className="w-full"
+  >
+    <div className="w-full p-4 rounded-lg border border-neutral-800 hover:border-neutral-700 transition-colors bg-neutral-900/50 hover:bg-neutral-900 flex gap-4 items-start">
+      {deck.image_hash && (
+        <img 
+          src={deck.image_hash} 
+          alt={deck.name}
+          className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+        />
+      )}
+      <div className="flex flex-col gap-2 text-left">
+        <span className="font-semibold text-neutral-200">{deck.name}</span>
+        {deck.description && (
+          <span className="text-sm text-neutral-400">{deck.description}</span>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="secondary" className="gap-1">
+            <Tag weight="fill" size={14} />
+            {deck.category}
+          </Badge>
+          <Badge variant="secondary" className="gap-1">
+            <Translate weight="fill" size={14} />
+            {deck.language}
+          </Badge>
+          {deck.price > 0 && (
+            <Badge variant="default" className="text-green-400">
+              ${deck.price}
+            </Badge>
+          )}
+        </div>
+      </div>
+    </div>
+  </Link>
+);
+
 export const HomePage = () => {
-  const [decks, setDecks] = useState<Deck[]>([]);
+  const [userDecks, setUserDecks] = useState<Deck[]>([]);
+  const [availableDecks, setAvailableDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDecks = async () => {
       try {
-        const availableDecks = await getAvailableDecks();
-        setDecks(availableDecks);
+        // First, get all decks from IndexedDB (our source of truth)
+        const storage = await IDBStorage.getInstance();
+        const localDecks = await storage.getAllDecks();
+        const localDeckMap = new Map(localDecks.map(deck => [deck.id, deck]));
+        setUserDecks(localDecks);
+
+        // Then get all available decks from Ceramic
+        const ceramicDecks = await getAvailableDecks();
+        
+        // Filter out decks that exist in IndexedDB
+        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+        setAvailableDecks(newAvailableDecks);
+
+        console.log('Local decks:', localDecks.length);
+        console.log('New available decks:', newAvailableDecks.length);
       } catch (err) {
         setError('Failed to load decks');
         console.error(err);
@@ -41,7 +98,7 @@ export const HomePage = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <p>Loading decks...</p>
+        <Loader size={48} />
       </div>
     );
   }
@@ -55,62 +112,31 @@ export const HomePage = () => {
     );
   }
 
-  if (decks.length === 0) {
-    return (
-      <div className="flex flex-col gap-6 p-4">
-        <h1 className="text-2xl font-bold">Welcome to Anki Farcaster!</h1>
-        <p className="text-gray-600">
-          Get started by adding some decks to study. Here are some recommended decks:
-        </p>
-        {/* TODO: Show featured/recommended decks here */}
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col gap-6 p-4">
-      <h1 className="text-2xl font-bold">Your Study Decks</h1>
-      <div className="flex flex-col gap-2">
-        {decks.map((deck) => (
-          <Link 
-            key={deck.id} 
-            to={`/decks/${deck.id}`}
-            className="w-full"
-          >
-            <Button 
-              variant="outline" 
-              className="w-full justify-start p-4 h-auto flex gap-4 items-start"
-            >
-              {deck.image_hash && (
-                <img 
-                  src={deck.image_hash} 
-                  alt={deck.name}
-                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                />
-              )}
-              <div className="flex flex-col gap-2 text-left">
-                <span className="font-semibold">{deck.name}</span>
-                {deck.description && (
-                  <span className="text-sm text-gray-600">{deck.description}</span>
-                )}
-                <div className="flex flex-wrap gap-2">
-                  <span className="px-2 py-1 text-xs bg-gray-100 rounded-full">
-                    {deck.category}
-                  </span>
-                  <span className="px-2 py-1 text-xs bg-gray-100 rounded-full">
-                    {deck.language}
-                  </span>
-                  {deck.price > 0 && (
-                    <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                      ${deck.price}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </Button>
-          </Link>
-        ))}
-      </div>
+    <div className="flex flex-col gap-8 p-4">
+      {/* User's Decks */}
+      <section>
+        <h2 className="text-2xl font-bold mb-4">Your Study Decks</h2>
+        {userDecks.length === 0 ? (
+          <p className="text-neutral-400">You haven't added any decks yet. Browse the available decks below to get started!</p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {userDecks.map((deck) => (
+              <DeckCard key={deck.id} deck={deck} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Available Decks */}
+      <section>
+        <h2 className="text-2xl font-bold mb-4">Available Decks</h2>
+        <div className="flex flex-col gap-2">
+          {availableDecks.map((deck) => (
+            <DeckCard key={deck.id} deck={deck} />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }; 

@@ -5,6 +5,8 @@ import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToApp
 import type { Deck, Flashcard } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
+import { Tag, Translate, CaretLeft } from '@phosphor-icons/react';
+import { Badge } from '@/components/ui/badge/Badge';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
   console.log('Fetching deck:', streamId);
@@ -88,6 +90,20 @@ export const DeckPage = () => {
 
   return (
     <div className="flex flex-col min-h-screen">
+      {/* Header */}
+      <div className="p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
+        <div className="flex justify-between items-center max-w-2xl mx-auto">
+          <div
+            role="button"
+            aria-label="Go back to home"
+            onClick={() => navigate('/')}
+            className="p-2 -ml-2 text-neutral-400 hover:text-neutral-300 transition-colors cursor-pointer"
+          >
+            <CaretLeft size={24} weight="regular" />
+          </div>
+        </div>
+      </div>
+
       {/* Deck Info */}
       <div className="flex flex-col gap-4 p-4">
         <div className="flex gap-4 items-start">
@@ -104,14 +120,18 @@ export const DeckPage = () => {
               <p className="text-neutral-100">{deck.description}</p>
             )}
             <div className="flex flex-wrap gap-2 text-sm text-neutral-400">
-              <span>Category: {deck.category}</span>
-              <span>•</span>
-              <span>Language: {deck.language}</span>
+              <Badge variant="secondary" className="gap-1">
+                <Tag weight="fill" size={14} />
+                {deck.category}
+              </Badge>
+              <Badge variant="secondary" className="gap-1">
+                <Translate weight="fill" size={14} />
+                {deck.language}
+              </Badge>
               {deck.price > 0 && (
-                <>
-                  <span>•</span>
-                  <span className="text-green-600">${deck.price}</span>
-                </>
+                <Badge variant="default" className="text-green-400">
+                  ${deck.price}
+                </Badge>
               )}
             </div>
           </div>
@@ -160,7 +180,15 @@ export const DeckPage = () => {
         <Button 
           variant="secondary"
           className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={() => navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`)}
+          onClick={async () => {
+            if (deck) {
+              // Store deck in IndexedDB before navigating
+              const storage = await IDBStorage.getInstance();
+              console.log('[DeckPage] Storing deck before study:', deck);
+              await storage.storeDeck(deck);
+            }
+            navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
+          }}
         >
           {hasStudiedToday ? 'Study Again' : 'Study'}
         </Button>
