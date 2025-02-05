@@ -24,15 +24,11 @@ export const StudyCard = ({
     setIsFlipped(false);
   };
 
-  if (!visible) {
-    return <div className={cn("flex flex-col min-h-[calc(100vh-theme(spacing.16))]", className)} />;
-  }
-
   return (
     <div className={cn("flex flex-col min-h-[calc(100vh-theme(spacing.16))]", className)}>
       <div className="flex-grow">
         <FlashCard>
-          {isFlipped ? (
+          {visible && (isFlipped ? (
             <div className="flex flex-col gap-4 items-center">
               {card.back_image_cid && (
                 <img 
@@ -57,24 +53,26 @@ export const StudyCard = ({
                 <audio controls src={card.audio_tts_cid} className="mt-4" />
               )}
             </div>
-          )}
+          ))}
         </FlashCard>
       </div>
 
-      <div className="sticky bottom-0 w-full p-4 bg-background border-t">
+      <div className="sticky bottom-0 w-full p-4 bg-neutral-900 border-t border-neutral-800">
         {isFlipped ? (
           <div className="flex gap-4 w-full">
             <Button 
               variant="secondary"
-              onClick={() => handleGrade(1)}
-              className="flex-1 py-6 bg-red-100 hover:bg-red-200 text-red-900"
+              onClick={() => visible && handleGrade(1)}
+              disabled={!visible}
+              className="flex-1 py-6 bg-neutral-500 hover:bg-neutral-600 text-white disabled:opacity-0"
             >
               Again
             </Button>
             <Button 
               variant="secondary"
-              onClick={() => handleGrade(3)}
-              className="flex-1 py-6 bg-green-100 hover:bg-green-200 text-green-900"
+              onClick={() => visible && handleGrade(3)}
+              disabled={!visible}
+              className="flex-1 py-6 bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-0"
             >
               Good
             </Button>
@@ -82,8 +80,9 @@ export const StudyCard = ({
         ) : (
           <Button 
             variant="secondary"
-            onClick={() => setIsFlipped(true)}
-            className="w-full py-6"
+            onClick={() => visible && setIsFlipped(true)}
+            disabled={!visible}
+            className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white disabled:opacity-0"
           >
             Flip
           </Button>
