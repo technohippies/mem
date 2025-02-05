@@ -46,6 +46,11 @@ export const DeckPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasStudiedToday, setHasStudiedToday] = useState(false);
+  const [cardStats, setCardStats] = useState({
+    newCount: 0,
+    reviewCount: 0,
+    dueCount: 0,
+  });
 
   useEffect(() => {
     const loadDeck = async () => {
@@ -60,6 +65,48 @@ export const DeckPage = () => {
         const storage = await IDBStorage.getInstance();
         const studied = await storage.hasStudiedToday('user', stream_id);
         setHasStudiedToday(studied);
+
+        // Calculate card stats
+        const cardProgressPromises = cardsData.map(card => storage.getCardProgress(card.id, 'user'));
+        const cardProgresses = await Promise.all(cardProgressPromises);
+        
+        console.log('--- Card Stats Calculation ---');
+        console.log('Total cards:', cardsData.length);
+        
+        // Get cards studied today
+        const studiedToday = await storage.getCardsStudiedToday('user', stream_id);
+        console.log('Cards studied today:', studiedToday);
+        
+        // Calculate stats
+        const newCards = cardsData.filter(card => {
+          const progress = cardProgresses[cardsData.indexOf(card)];
+          const isStudiedToday = studiedToday.includes(card.id);
+          return !progress && !isStudiedToday;
+        });
+        
+        const reviewCards = cardsData.filter(card => 
+          studiedToday.includes(card.id)
+        );
+        
+        const dueCards = cardsData.filter(card => {
+          const progress = cardProgresses[cardsData.indexOf(card)];
+          const isStudiedToday = studiedToday.includes(card.id);
+          return progress && !isStudiedToday && progress.review_date && new Date(progress.review_date) <= new Date();
+        });
+
+        console.log('Stats breakdown:', {
+          total: cardsData.length,
+          new: `${newCards.length} (never studied cards)`,
+          review: `${reviewCards.length} (studied today)`,
+          due: `${dueCards.length} (cards due for review)`,
+          studiedToday: studiedToday.length
+        });
+        
+        setCardStats({
+          newCount: newCards.length,
+          reviewCount: reviewCards.length,
+          dueCount: dueCards.length,
+        });
       } catch (err) {
         setError('Failed to load deck');
         console.error(err);
@@ -134,6 +181,22 @@ export const DeckPage = () => {
                 </Badge>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Card Stats */}
+        <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+            <span className="text-neutral-500 text-sm">New</span>
+            <span className="text-2xl font-bold mt-1">{cardStats.newCount}</span>
+          </div>
+          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+            <span className="text-neutral-500 text-sm">Review</span>
+            <span className="text-2xl font-bold mt-1">{cardStats.reviewCount}</span>
+          </div>
+          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+            <span className="text-neutral-500 text-sm">Due</span>
+            <span className="text-2xl font-bold mt-1">{cardStats.dueCount}</span>
           </div>
         </div>
       </div>
