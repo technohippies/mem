@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { IDBStorage } from '@/services/storage/idb';
 import type { AuthState } from '@/types/auth';
-import { db } from '@/db/orbis';
+import { db, initStorageSession } from '@/db/orbis';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 import type { IEVMProvider } from "@useorbis/db-sdk";
-import { initStorageSession } from '@/services/storage/orbis';
 
 const AUTH_KEY = 'auth_state';
 

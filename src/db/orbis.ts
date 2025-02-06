@@ -30,6 +30,76 @@ export const DECK_MODEL = ORBIS_DECK_MODEL_ID;
 export const FLASHCARD_MODEL = ORBIS_FLASHCARD_MODEL_ID;
 export const PROGRESS_MODEL = ORBIS_PROGRESS_MODEL_ID;
 
+// Session management
+let storageSession: Promise<void> | null = null;
+
+export async function initStorageSession() {
+  if (!storageSession) {
+    storageSession = (async () => {
+      try {
+        console.log('Initializing Orbis storage session...');
+        
+        // Wait a bit for the connection to be fully established
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Get the current user's DID from the auth result
+        const details = await db.getConnectedUser();
+        console.log('Got user details:', details);
+        
+        if (!details) {
+          throw new Error('No authenticated user found');
+        }
+
+        // Get the user's DID from the details object
+        const did = details.user?.did;
+        if (!did) {
+          throw new Error('No DID found in auth result');
+        }
+        console.log('Current user DID:', did);
+
+        // Create a test write to initialize the session
+        console.log('Performing test write to Orbis...');
+        const result = await db
+          .insert(PROGRESS_MODEL)
+          .value({
+            flashcard_id: 'test',
+            reps: 0,
+            lapses: 0,
+            stability: 0,
+            difficulty: 0,
+            last_review: new Date().toISOString(),
+            next_review: new Date().toISOString(),
+            correct_reps: 0,
+            last_interval: 0,
+            retrievability: 0
+          })
+          .context(CONTEXT_ID)
+          .run();
+
+        console.log('Test write successful:', result);
+        console.log('Orbis storage session initialized successfully');
+      } catch (error) {
+        console.error('Failed to initialize storage session:', error);
+        storageSession = null; // Reset so we can try again
+        throw error;
+      }
+    })();
+  }
+  return storageSession;
+}
+
+export async function clearStorageSession() {
+  console.log('Clearing Orbis storage session...');
+  try {
+    await db.disconnectUser();
+    storageSession = null;
+    console.log('Orbis storage session cleared successfully');
+  } catch (error) {
+    console.error('Failed to clear storage session:', error);
+    throw error;
+  }
+}
+
 // Type definitions for Orbis models
 export interface OrbisDeck {
     stream_id: string;

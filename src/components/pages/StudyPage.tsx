@@ -9,11 +9,9 @@ import { useToast } from '@/components/ui/toast/useToast';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
-import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 import { Loader } from '@/components/ui/loader/Loader';
 import { CaretLeft, X } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
-import type { IEVMProvider } from "@useorbis/db-sdk";
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -358,6 +356,7 @@ export const StudyPage = () => {
             <Button
               variant="secondary"
               onClick={() => connect(address || '')}
+              className="w-32"
             >
               Initialize Connection
             </Button>
@@ -366,12 +365,10 @@ export const StudyPage = () => {
               variant="secondary"
               onClick={handleCeramicConnect}
               disabled={isConnectingCeramic}
+              className="w-32"
             >
               {isConnectingCeramic ? (
-                <div className="flex items-center gap-2">
-                  <Loader size={16} />
-                  <span>Connecting to Ceramic...</span>
-                </div>
+                <Loader size={16} />
               ) : (
                 'Connect to Ceramic'
               )}
@@ -381,14 +378,12 @@ export const StudyPage = () => {
               variant="secondary"
               onClick={handleSync}
               disabled={isSyncing || syncComplete}
+              className="w-32"
             >
               {isSyncing ? (
-                <div className="flex items-center gap-2">
-                  <Loader size={16} />
-                  <span>Syncing...</span>
-                </div>
+                <Loader size={16} />
               ) : syncComplete ? (
-                <span>✓ Synced</span>
+                'Synced'
               ) : (
                 'Save to Cloud'
               )}
@@ -410,14 +405,6 @@ export const StudyPage = () => {
             onClick={() => navigate(-1)}
             className="-ml-2"
           />
-          {isSyncing ? (
-            <div className="flex items-center gap-2">
-              <Loader size={16} />
-              <span className="text-sm text-neutral-400">Syncing...</span>
-            </div>
-          ) : syncComplete ? (
-            <span className="text-sm text-green-400">Synced!</span>
-          ) : null}
         </div>
 
         {/* Study Card */}
