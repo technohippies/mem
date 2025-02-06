@@ -6,12 +6,14 @@ import { useState, useEffect } from 'react';
 import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard, PROGRESS_MODEL } from '@/db/orbis';
 import { Button } from '@/components/ui/button/Button';
 import { useToast } from '@/components/ui/toast/useToast';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { AuthWrapper } from '@/components/auth/AuthWrapper';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 import { Loader } from '@/components/ui/loader/Loader';
 import { CaretLeft, X } from '@phosphor-icons/react';
+import { IconButton } from '@/components/ui/button/IconButton';
+import type { IEVMProvider } from "@useorbis/db-sdk";
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -28,15 +30,21 @@ export const StudyPage = () => {
     isLoading,
     newCardsToday,
     reviewsToday,
-    isExtraStudy,
     onGrade,
-    onRestart,
     reloadSession 
   } = useStudySession(stream_id || '', isInitialized, searchParams.get('mode') === 'extra');
   const { toast } = useToast();
-  const { isAuthenticated, isCeramicConnected, userAddress } = useAuth();
+  const { isConnected, isCeramicConnected, userAddress, connectCeramic, connect } = useAuthContext();
   const appKit = useAppKit();
-  const { isConnected } = useAppKitAccount();
+  const { isConnected: isWalletConnected, address } = useAppKitAccount();
+
+  // Effect to handle wallet connection state
+  useEffect(() => {
+    if (isWalletConnected && address && !isConnected) {
+      console.log('[StudyPage] Wallet connected, setting address:', address);
+      connect(address);
+    }
+  }, [isWalletConnected, address, isConnected, connect]);
 
   // Initialize cards in storage
   useEffect(() => {
@@ -113,7 +121,7 @@ export const StudyPage = () => {
       return;
     }
 
-    if (!isAuthenticated || !userAddress) {
+    if (!isConnected || !userAddress) {
       if (!appKit?.open) {
         toast({
           title: "Error",
@@ -279,51 +287,152 @@ export const StudyPage = () => {
 
   if (isComplete) {
     return (
-      <div className="flex flex-col items-center justify-center h-dvh gap-4 p-4">
+      <div className="flex flex-col items-center justify-center h-dvh gap-4 p-4 relative">
+        <div className="absolute top-4 left-4">
+          <IconButton
+            icon={<X size={24} weight="regular" />}
+            label="Close study session"
+            onClick={() => navigate(-1)}
+          />
+        </div>
         <h1 className="text-2xl font-bold">Session Complete!</h1>
         <div className="flex flex-col items-center gap-2 text-neutral-400">
           <p>New cards: {newCardsToday}</p>
           <p>Reviews: {reviewsToday}</p>
         </div>
-        {isExtraStudy ? (
-          <Button onClick={() => navigate(-1)}>Back to Deck</Button>
-        ) : (
-          <Button onClick={onRestart}>Study Again</Button>
-        )}
+        <div className="flex flex-col w-full max-w-xs gap-2">
+          {!isWalletConnected ? (
+            <Button 
+              variant="secondary"
+              onClick={async () => {
+                console.log('[StudyPage] Connect wallet button clicked');
+                try {
+                  await appKit?.open();
+                } catch (error) {
+                  console.error('[StudyPage] Failed to open wallet:', error);
+                  toast({
+                    title: "Error",
+                    description: "Failed to connect wallet",
+                    variant: "destructive"
+                  });
+                }
+              }}
+            >
+              Connect Wallet
+            </Button>
+          ) : !isConnected ? (
+            <Button
+              variant="secondary"
+              onClick={() => connect(address || '')}
+            >
+              Initialize Connection
+            </Button>
+          ) : !isCeramicConnected ? (
+            <Button 
+              variant="secondary"
+              onClick={async () => {
+                try {
+                  if (!window.ethereum || !userAddress) {
+                    toast({
+                      title: "Error",
+                      description: "Please connect your wallet first",
+                      variant: "destructive"
+                    });
+                    return;
+                  }
+
+                  // Show loading state
+                  toast({
+                    title: "Connecting",
+                    description: "Initializing Ceramic connection...",
+                  });
+
+                  // Wait for wallet connection to stabilize
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+
+                  const provider = window.ethereum as unknown as IEVMProvider;
+                  const auth = new OrbisEVMAuth(provider);
+                  const result = await db.connectUser({ auth });
+                  
+                  if (!result) {
+                    throw new Error('Failed to connect to Ceramic');
+                  }
+
+                  // Check if we're actually connected
+                  const isConnected = await db.isUserConnected();
+                  if (!isConnected) {
+                    throw new Error('Failed to verify Ceramic connection');
+                  }
+
+                  toast({
+                    title: "Success",
+                    description: "Connected to Ceramic network"
+                  });
+
+                  // Refresh the page to update state
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Failed to connect to Ceramic:', error);
+                  toast({
+                    title: "Error",
+                    description: error instanceof Error ? error.message : "Failed to connect to Ceramic network",
+                    variant: "destructive"
+                  });
+                }
+              }}
+            >
+              Connect to Ceramic
+            </Button>
+          ) : (
+            <Button 
+              variant="secondary"
+              onClick={handleSync}
+              disabled={isSyncing || syncComplete}
+            >
+              {isSyncing ? (
+                <Loader size={16} color="currentColor" />
+              ) : syncComplete ? (
+                <span>✓ Synced</span>
+              ) : (
+                'Save to Cloud'
+              )}
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-dvh">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
-        <div
-          role="button"
-          aria-label="Go back to deck"
-          onClick={() => navigate(-1)}
-          className="p-2 -ml-2 text-neutral-400 hover:text-neutral-300 transition-colors cursor-pointer"
-        >
-          <CaretLeft size={24} weight="regular" />
+    <AuthWrapper>
+      <div className="flex flex-col h-dvh">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
+          <IconButton
+            icon={<CaretLeft size={24} weight="regular" />}
+            label="Go back to deck"
+            onClick={() => navigate(-1)}
+            className="-ml-2"
+          />
+          {isSyncing ? (
+            <div className="flex items-center gap-2">
+              <Loader size={16} />
+              <span className="text-sm text-neutral-400">Syncing...</span>
+            </div>
+          ) : syncComplete ? (
+            <span className="text-sm text-green-400">Synced!</span>
+          ) : null}
         </div>
-        {isSyncing ? (
-          <div className="flex items-center gap-2">
-            <Loader size={16} />
-            <span className="text-sm text-neutral-400">Syncing...</span>
-          </div>
-        ) : syncComplete ? (
-          <span className="text-sm text-green-400">Synced!</span>
-        ) : null}
-      </div>
 
-      {/* Study Card */}
-      <div className="flex-grow">
-        <StudyCard
-          card={currentCard}
-          onGrade={onGrade}
-          visible={showingCard}
-        />
+        {/* Study Card */}
+        <div className="flex-grow">
+          <StudyCard
+            card={currentCard}
+            onGrade={onGrade}
+            visible={showingCard}
+          />
+        </div>
       </div>
-    </div>
+    </AuthWrapper>
   );
 };

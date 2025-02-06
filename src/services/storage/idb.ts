@@ -586,7 +586,7 @@ export class IDBStorage {
   }
 
   // Auth state operations
-  async getAuthState(key: string): Promise<{ address: string; timestamp: number } | null> {
+  async getAuthState(key: string): Promise<{ address: string } | null> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
@@ -599,27 +599,18 @@ export class IDBStorage {
       };
 
       request.onsuccess = () => {
-        const result = request.result;
-        resolve(result?.data || null);  // Extract the data from the nested structure
+        resolve(request.result || null);
       };
     });
   }
 
-  async setAuthState(key: string, address: string, timestamp: number): Promise<void> {
+  async setAuthState(key: string, address: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction('auth_state', 'readwrite');
       const store = transaction.objectStore('auth_state');
-      // Structure the data to match the keyPath 'key'
-      const data = {
-        key,  // This matches the keyPath
-        data: {  // Nest the actual data
-          address,
-          timestamp
-        }
-      };
-      const request = store.put(data);
+      const request = store.put({ key, address });
 
       request.onerror = () => {
         reject(new Error('Failed to set auth state'));

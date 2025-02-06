@@ -210,3 +210,8 @@ dist-ssr
 
 # Storybook
 storybook-static
+
+# SQLite files
+*.db
+*.sqlite
+*.sqlite3

@@ -5,8 +5,8 @@ import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToApp
 import type { Deck, Flashcard } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
-import { Tag, Translate, CaretLeft } from '@phosphor-icons/react';
-import { Badge } from '@/components/ui/badge/Badge';
+import { CaretLeft } from '@phosphor-icons/react';
+import { IconButton } from '@/components/ui/button/IconButton';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
   console.log('Fetching deck:', streamId);
@@ -165,20 +165,18 @@ export const DeckPage = () => {
     <div className="flex flex-col min-h-screen">
       {/* Header */}
       <div className="p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
-        <div className="flex justify-between items-center max-w-2xl mx-auto">
-          <div
-            role="button"
-            aria-label="Go back to home"
+        <div className="flex justify-between items-center">
+          <IconButton
+            icon={<CaretLeft size={24} weight="regular" />}
+            label="Go back to home"
             onClick={() => navigate('/')}
-            className="p-2 -ml-2 text-neutral-400 hover:text-neutral-300 transition-colors cursor-pointer"
-          >
-            <CaretLeft size={24} weight="regular" />
-          </div>
+            className="-ml-2"
+          />
         </div>
       </div>
 
       {/* Deck Info */}
-      <div className="flex flex-col gap-4 p-4">
+      <div className="flex flex-col gap-1 p-4">
         <div className="flex gap-4 items-start">
           {deck.image_hash && (
             <img 
@@ -192,21 +190,7 @@ export const DeckPage = () => {
             {deck.description && (
               <p className="text-neutral-100">{deck.description}</p>
             )}
-            <div className="flex flex-wrap gap-2 text-sm text-neutral-400">
-              <Badge variant="secondary" className="gap-1">
-                <Tag weight="fill" size={14} />
-                {deck.category}
-              </Badge>
-              <Badge variant="secondary" className="gap-1">
-                <Translate weight="fill" size={14} />
-                {deck.language}
-              </Badge>
-              {deck.price > 0 && (
-                <Badge variant="default" className="text-green-400">
-                  ${deck.price}
-                </Badge>
-              )}
-            </div>
+
           </div>
         </div>
 
@@ -234,7 +218,7 @@ export const DeckPage = () => {
           {cards.map((card) => (
             <div 
               key={card.id}
-              className="p-4 border border-neutral-700 rounded-lg flex flex-col gap-1"
+              className="p-4 bg-neutral-800/50 rounded-lg flex flex-col gap-1"
             >
               <div className="flex gap-4 items-center">
                 {card.front_image_cid && (

@@ -12,14 +12,19 @@ export async function initStorageSession() {
       try {
         console.log('Initializing Orbis storage session...');
         
+        // Wait a bit for the connection to be fully established
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
         // Get the current user's DID from the auth result
         const details = await db.getConnectedUser();
+        console.log('Got user details:', details);
+        
         if (!details) {
           throw new Error('No authenticated user found');
         }
-        
+
         // Get the user's DID from the details object
-        const did = (details as any).id;
+        const did = details.user?.did;
         if (!did) {
           throw new Error('No DID found in auth result');
         }
@@ -30,17 +35,16 @@ export async function initStorageSession() {
         const result = await db
           .insert(PROGRESS_MODEL)
           .value({
-            user_id: did,
-            deck_id: 'test',
-            card_id: 'test',
-            next_review: new Date().toISOString(),
-            review_date: new Date().toISOString(),
-            difficulty: 0,
-            stability: 0,
-            retrievability: 0,
+            flashcard_id: 'test',
             reps: 0,
             lapses: 0,
-            interval: 0
+            stability: 0,
+            difficulty: 0,
+            last_review: new Date().toISOString(),
+            next_review: new Date().toISOString(),
+            correct_reps: 0,
+            last_interval: 0,
+            retrievability: 0
           })
           .context(CONTEXT_ID)
           .run();

@@ -1,4 +1,4 @@
-import type { User, Deck, FlashCard, StudySession } from './models';
+import type { User, Deck, Flashcard, StudySession } from './models';
 
 // API Response types
 export interface ApiResponse<T> {
@@ -22,13 +22,13 @@ export interface DeckListResponse {
 
 export interface DeckResponse {
   deck: Deck;
-  cards: FlashCard[];
+  cards: Flashcard[];
 }
 
 // Study responses
 export interface StudySessionResponse {
   session: StudySession;
-  nextCard?: FlashCard;
+  nextCard?: Flashcard;
   progress: {
     cardsLeft: number;
     totalCards: number;

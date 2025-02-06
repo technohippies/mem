@@ -4,10 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "init-db": "bun run src/init-db.ts",
     "dev": "vite",
     "api": "bun run src/server.ts",
-    "dev:all": "bun run init-db && concurrently \"bun run dev\" \"bun run api\"",
+    "dev:all": "concurrently \"bun run dev\" \"bun run api\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "storybook": "storybook dev -p 6006",

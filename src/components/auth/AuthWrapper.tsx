@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { Button } from '@/components/ui/button/Button';
@@ -13,10 +13,10 @@ const SYNC_REQUIRED_ROUTES = [
 ];
 
 export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, isInitializing, isCeramicConnected } = useAuth();
+  const { isConnected, isInitializing, isCeramicConnected } = useAuthContext();
   const location = useLocation();
   const appKit = useAppKit();
-  const { isConnected, address } = useAppKitAccount();
+  const { isConnected: isWalletConnected, address } = useAppKitAccount();
 
   const requiresSync = SYNC_REQUIRED_ROUTES.some(route => 
     location.pathname.includes(route)
@@ -25,17 +25,17 @@ export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children 
   // Log state changes
   useEffect(() => {
     console.log('[AuthWrapper] State changed:', {
-      isAuthenticated,
+      isConnected,
       isInitializing,
       isCeramicConnected,
       pathname: location.pathname,
       requiresSync,
       appKitMethods: Object.keys(appKit || {}),
       appKitOpen: typeof appKit?.open,
-      walletConnected: isConnected,
+      walletConnected: isWalletConnected,
       walletAddress: address,
     });
-  }, [isAuthenticated, isInitializing, isCeramicConnected, location.pathname, requiresSync, appKit, isConnected, address]);
+  }, [isConnected, isInitializing, isCeramicConnected, location.pathname, requiresSync, appKit, isWalletConnected, address]);
 
   const handleConnect = async (e: React.MouseEvent) => {
     e.preventDefault();
