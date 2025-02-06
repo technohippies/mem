@@ -1,77 +1,6 @@
 import type { Deck, Flashcard } from '@/types/models';
 import type { FSRSOutput } from '@/services/fsrs';
 
-// Database schema types
-interface CardProgress {
-  user_id: string;
-  card_id: string;
-  correct_reps: number;
-  last_interval: number;
-  retrievability: number;
-  review_date: string;
-}
-
-interface StudySession {
-  id: string; // Format: `${userId}-${deckId}-${date}`
-  user_id: string;
-  deck_id: string;
-  date: string;
-  cards_studied: string[]; // Array of card IDs studied today
-  last_studied_index: number; // Index to resume from
-}
-
-interface AuthState {
-  id: string;
-  address: string;
-  timestamp: number;
-}
-
-// Database structure
-interface DBSchema {
-  decks: {
-    key: string; // stream_id
-    value: {
-      stream_id: string;
-      controller: string;
-      name: string;
-      price: number;
-      category: string;
-      language: string;
-      image_cid: string;
-      is_public: boolean;
-      description: string;
-      forked_from: string;
-    };
-  };
-  cards: {
-    key: string; // stream_id
-    value: {
-      stream_id: string;
-      controller: string;
-      deck_id: string;
-      language: string;
-      back_text: string;
-      front_text: string;
-      sort_order: number;
-      audio_tts_cid: string;
-      back_image_cid: string;
-      front_image_cid: string;
-    };
-  };
-  progress: {
-    key: string; // `${user_id}-${card_id}`
-    value: CardProgress;
-  };
-  study_sessions: {
-    key: string; // `${user_id}-${deck_id}-${date}`
-    value: StudySession;
-  };
-  auth_state: {
-    key: string;
-    value: AuthState;
-  };
-}
-
 // Storage interface that matches our previous SQL interface
 export class IDBStorage {
   private static instance: IDBStorage | null = null;
@@ -151,25 +80,12 @@ export class IDBStorage {
           studySessions.createIndex('date', 'date', { unique: false });
         }
 
-        if (!db.objectStoreNames.contains('auth_state')) {
-          console.log('[IDBStorage] Creating auth_state store');
-          const authState = db.createObjectStore('auth_state', { keyPath: 'id' });
-          authState.createIndex('address', 'address', { unique: false });
-          authState.createIndex('timestamp', 'timestamp', { unique: false });
+        if (!db.objectStoreNames.contains('auth')) {
+          console.log('[IDBStorage] Creating auth store');
+          const auth = db.createObjectStore('auth', { keyPath: 'key' });
         }
       };
     });
-  }
-
-  // Core deck operations
-  async getDeckBySlug(slug: string): Promise<Deck | null> {
-    // TODO: Implement this
-    return null;
-  }
-
-  async getDeckByStreamId(streamId: string): Promise<Deck | null> {
-    // TODO: Implement this
-    return null;
   }
 
   async getAllDecks(): Promise<Deck[]> {
@@ -278,8 +194,12 @@ export class IDBStorage {
                   is_public: deck.is_public,
                   created_at: new Date().toISOString(),
                   updated_at: new Date().toISOString(),
-                  forked_from: deck.forked_from
-                });
+                  forked_from: deck.forked_from,
+                  slug: deck.stream_id,
+                  tags: '',
+                  is_admin: false,
+                  stream_id: deck.stream_id
+                } as Deck);
               } else {
                 reject(new Error(`Deck ${deckId} not found`));
               }
@@ -589,55 +509,36 @@ export class IDBStorage {
   async storeDeck(deck: Deck): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
-    console.log('[IDBStorage] Storing deck in IndexedDB:', deck);
-    console.log('[IDBStorage] Available stores:', Array.from(this.db.objectStoreNames));
-
     return new Promise((resolve, reject) => {
-      try {
-        console.log('[IDBStorage] Creating transaction...');
-        const transaction = this.db!.transaction('decks', 'readwrite');
-        
-        transaction.onerror = (event) => {
-          console.error('[IDBStorage] Transaction error:', event);
-        };
+      const transaction = this.db!.transaction('decks', 'readwrite');
+      const store = transaction.objectStore('decks');
 
-        transaction.oncomplete = () => {
-          console.log('[IDBStorage] Transaction completed');
-        };
+      // Store exactly what's in the Deck interface
+      const request = store.put({
+        stream_id: deck.id,
+        name: deck.name,
+        description: deck.description,
+        slug: deck.slug,
+        image_hash: deck.image_hash,
+        image_url: deck.image_url,
+        tags: deck.tags,
+        is_admin: deck.is_admin,
+        created_at: deck.created_at,
+        updated_at: deck.updated_at,
+        category: deck.category,
+        language: deck.language,
+        price: deck.price,
+        is_public: deck.is_public,
+        forked_from: deck.forked_from
+      });
 
-        console.log('[IDBStorage] Getting store...');
-        const store = transaction.objectStore('decks');
-        console.log('[IDBStorage] Store accessed:', store.name);
+      request.onerror = () => {
+        reject(new Error('Failed to store deck'));
+      };
 
-        const deckData = {
-          stream_id: deck.id,
-          controller: '',
-          name: deck.name,
-          description: deck.description || '',
-          category: deck.category,
-          language: deck.language,
-          price: deck.price,
-          image_cid: deck.image_hash || '',
-          is_public: deck.is_public,
-          forked_from: deck.forked_from || ''
-        };
-
-        console.log('[IDBStorage] Deck data to store:', deckData);
-        const request = store.put(deckData);
-
-        request.onerror = () => {
-          console.error('[IDBStorage] Failed to store deck:', request.error);
-          reject(new Error('Failed to store deck'));
-        };
-
-        request.onsuccess = () => {
-          console.log('[IDBStorage] Successfully stored deck:', deck.id);
-          resolve();
-        };
-      } catch (error) {
-        console.error('[IDBStorage] Error in storeDeck:', error);
-        reject(error);
-      }
+      request.onsuccess = () => {
+        resolve();
+      };
     });
   }
 
@@ -674,32 +575,68 @@ export class IDBStorage {
   }
 
   // Auth state
-  async getAuthState(key: string): Promise<{ address: string; timestamp: number } | null> {
-    // TODO: Implement this
-    return null;
-  }
-
-  async setAuthState(key: string, address: string, timestamp: number): Promise<void> {
-    // TODO: Implement this
-  }
-
-  async clearAuthState(key: string): Promise<void> {
-    // TODO: Implement this
-  }
-
-  // User stats
-  async getUserStreak(userId: string): Promise<number> {
+  async getUserStreak(): Promise<number> {
     // TODO: Implement this
     return 0;
   }
 
-  async getDueCardCounts(userId: string): Promise<{ [deckId: string]: number }> {
+  async getDeckProgress(): Promise<any> {
     // TODO: Implement this
     return {};
   }
 
-  // Progress management
-  async clearProgress(deckId: string): Promise<void> {
-    // TODO: Implement this
+  // Auth state operations
+  async getAuthState(key: string): Promise<{ address: string; timestamp: number } | null> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction('auth', 'readonly');
+      const store = transaction.objectStore('auth');
+      const request = store.get(key);
+
+      request.onerror = () => {
+        reject(new Error('Failed to get auth state'));
+      };
+
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+    });
+  }
+
+  async setAuthState(key: string, address: string, timestamp: number): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction('auth', 'readwrite');
+      const store = transaction.objectStore('auth');
+      const request = store.put({ key, address, timestamp });
+
+      request.onerror = () => {
+        reject(new Error('Failed to set auth state'));
+      };
+
+      request.onsuccess = () => {
+        resolve();
+      };
+    });
+  }
+
+  async clearAuthState(key: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction('auth', 'readwrite');
+      const store = transaction.objectStore('auth');
+      const request = store.delete(key);
+
+      request.onerror = () => {
+        reject(new Error('Failed to clear auth state'));
+      };
+
+      request.onsuccess = () => {
+        resolve();
+      };
+    });
   }
 } 
