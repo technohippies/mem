@@ -5,12 +5,13 @@ import tsconfigPaths from 'vite-tsconfig-paths';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  base: '/',
   plugins: [
     react(), 
     tsconfigPaths(),
     VitePWA({ 
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon.png'],
+      registerType: 'prompt',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon.png', 'brain.svg'],
       manifest: {
         name: 'Mneme',
         short_name: 'Mneme',
@@ -19,6 +20,7 @@ export default defineConfig({
         background_color: '#18181B',
         display: 'standalone',
         start_url: '/',
+        scope: '/',
         icons: [
           {
             src: 'pwa-64x64.png',
@@ -45,9 +47,13 @@ export default defineConfig({
         ]
       },
       devOptions: {
-        enabled: true
+        enabled: true,
+        type: 'module'
       },
+      strategies: 'generateSW',
       workbox: {
+        cleanupOutdatedCaches: true,
+        sourcemap: true,
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB
         runtimeCaching: [
           {
@@ -106,6 +112,20 @@ export default defineConfig({
                 statuses: [0, 200]
               },
               networkTimeoutSeconds: 10
+            }
+          },
+          {
+            urlPattern: /^https:\/\/api\.web3modal\.org\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'web3modal-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 // 1 hour
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              }
             }
           }
         ]

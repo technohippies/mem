@@ -195,7 +195,7 @@ export const HomePage = () => {
       <section>
         <h2 className="text-2xl font-bold mb-4">Your Decks</h2>
         {userDecks.length === 0 ? (
-          <p className="text-neutral-400">You haven't added any decks yet. Browse the available decks below to get started!</p>
+          <p className="text-neutral-400">You haven't added any decks yet.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {userDecks.map((deck) => (
