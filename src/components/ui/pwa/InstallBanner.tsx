@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { X } from '@phosphor-icons/react';
-import { Button } from '../button/Button';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -62,14 +61,23 @@ export function InstallBanner() {
 
   return (
     <div className="sticky top-0 left-0 right-0 bg-neutral-900 text-neutral-100 p-2 flex items-center z-50 border-b border-neutral-800">
+      {/* Left spacer to match right button width */}
+      <div className="w-8" />
+      
+      {/* Centered text that acts as a button */}
       <div className="flex-1 flex justify-center">
-        <Button onClick={handleInstall} variant="default" size="sm" className="bg-blue-500 hover:bg-blue-600">
+        <button 
+          onClick={handleInstall}
+          className="text-blue-500 hover:text-blue-400 transition-colors font-medium"
+        >
           Add to Homescreen
-        </Button>
+        </button>
       </div>
+
+      {/* Right dismiss button */}
       <button 
         onClick={handleDismiss} 
-        className="p-1 hover:bg-neutral-800 rounded-full transition-colors"
+        className="w-8 h-8 flex items-center justify-center hover:bg-neutral-800 rounded-full transition-colors"
         aria-label="Dismiss install banner"
       >
         <X size={20} />

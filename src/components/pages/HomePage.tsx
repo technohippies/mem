@@ -22,7 +22,10 @@ const getAvailableDecks = async (): Promise<Deck[]> => {
     return rows.map(row => orbisToAppDeck(row as OrbisDeck));
   } catch (error) {
     console.error('Failed to fetch decks from OrbisDB:', error);
-    return [];
+    if (!navigator.onLine) {
+      return []; // Return empty array when offline
+    }
+    throw error; // Re-throw if online (might be a different error)
   }
 };
 
@@ -128,7 +131,11 @@ export const HomePage = () => {
 
   // Monitor online/offline status
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
+    const handleOnline = () => {
+      setIsOffline(false);
+      // Optionally reload data when coming back online
+      window.location.reload();
+    };
     const handleOffline = () => setIsOffline(true);
 
     window.addEventListener('online', handleOnline);
@@ -147,21 +154,25 @@ export const HomePage = () => {
         // First, get all decks from IndexedDB (our source of truth)
         const storage = await IDBStorage.getInstance();
         const localDecks = await storage.getAllDecks();
-        const localDeckMap = new Map(localDecks.map(deck => [deck.id, deck]));
         setUserDecks(localDecks);
+        
+        // Create a map of local decks for filtering
+        const localDeckMap = new Map(localDecks.map(deck => [deck.id, deck]));
 
-        // Then get all available decks from Ceramic if online
-        if (navigator.onLine) {
-          const ceramicDecks = await getAvailableDecks();
-          // Filter out decks that exist in IndexedDB
-          const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
-          setAvailableDecks(newAvailableDecks);
-        }
+        // Then get all available decks from Ceramic
+        const ceramicDecks = await getAvailableDecks();
+        
+        // Filter out decks that exist in IndexedDB
+        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+        setAvailableDecks(newAvailableDecks);
 
         console.log('Local decks:', localDecks.length);
       } catch (err) {
-        console.error(err);
-        setError('Failed to load decks');
+        console.error('Error loading decks:', err);
+        // Only show error if we're online
+        if (navigator.onLine) {
+          setError('Failed to load available decks');
+        }
       } finally {
         setLoading(false);
       }
@@ -207,16 +218,12 @@ export const HomePage = () => {
         </h2>
         {error ? (
           <div className="text-neutral-400">
-            {isOffline ? (
-              "You're offline. Your saved decks are available above."
-            ) : (
-              <div className="flex items-center gap-2">
-                <span>Failed to load available decks.</span>
-                <Button onClick={() => window.location.reload()} variant="ghost" size="sm">
-                  Retry
-                </Button>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <span>Failed to load available decks.</span>
+              <Button onClick={() => window.location.reload()} variant="ghost" size="sm">
+                Retry
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
