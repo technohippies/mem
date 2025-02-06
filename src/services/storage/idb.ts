@@ -63,6 +63,7 @@ export class IDBStorage {
           decks.createIndex('controller', 'controller', { unique: false });
           decks.createIndex('category', 'category', { unique: false });
           decks.createIndex('language', 'language', { unique: false });
+          decks.createIndex('last_sync', 'last_sync', { unique: false });
         }
 
         if (!db.objectStoreNames.contains('cards')) {
@@ -150,7 +151,8 @@ export class IDBStorage {
               slug: deck.stream_id,
               tags: '',
               is_admin: false,
-              stream_id: deck.stream_id
+              stream_id: deck.stream_id,
+              last_sync: deck.last_sync
             } as Deck;
           });
           console.log('[IDBStorage] Processed decks:', decks);
@@ -210,7 +212,8 @@ export class IDBStorage {
                   slug: deck.stream_id,
                   tags: '',
                   is_admin: false,
-                  stream_id: deck.stream_id
+                  stream_id: deck.stream_id,
+                  last_sync: deck.last_sync
                 } as Deck);
               } else {
                 reject(new Error(`Deck ${deckId} not found`));
@@ -518,6 +521,42 @@ export class IDBStorage {
   }
 
   // Storage operations
+  async updateDeckLastSync(deckId: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction('decks', 'readwrite');
+      const store = transaction.objectStore('decks');
+      
+      // First get the current deck data
+      const getRequest = store.get(deckId);
+
+      getRequest.onerror = () => {
+        reject(new Error('Failed to get deck for sync update'));
+      };
+
+      getRequest.onsuccess = () => {
+        const deck = getRequest.result;
+        if (!deck) {
+          reject(new Error('Deck not found'));
+          return;
+        }
+
+        // Update the last_sync field
+        deck.last_sync = new Date().toISOString();
+        const updateRequest = store.put(deck);
+
+        updateRequest.onerror = () => {
+          reject(new Error('Failed to update deck last sync time'));
+        };
+
+        updateRequest.onsuccess = () => {
+          resolve();
+        };
+      };
+    });
+  }
+
   async storeDeck(deck: Deck): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -541,7 +580,8 @@ export class IDBStorage {
         language: deck.language,
         price: deck.price,
         is_public: deck.is_public,
-        forked_from: deck.forked_from
+        forked_from: deck.forked_from,
+        last_sync: deck.last_sync
       });
 
       request.onerror = () => {

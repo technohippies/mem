@@ -276,6 +276,8 @@ export const StudyPage = () => {
           });
         } else {
           console.log('Bulk insert successful for all entries');
+          // Update last sync time
+          await storage.updateDeckLastSync(stream_id);
         }
       }
       
@@ -374,20 +376,27 @@ export const StudyPage = () => {
               )}
             </Button>
           ) : (
-            <Button 
-              variant="secondary"
-              onClick={handleSync}
-              disabled={isSyncing || syncComplete}
-              className="w-32"
-            >
-              {isSyncing ? (
-                <Loader size={16} />
-              ) : syncComplete ? (
-                'Synced'
-              ) : (
-                'Save to Cloud'
+            <div className="flex flex-col items-center gap-2">
+              <Button 
+                variant="secondary"
+                onClick={handleSync}
+                disabled={isSyncing || syncComplete}
+                className="w-32"
+              >
+                {isSyncing ? (
+                  <Loader size={16} />
+                ) : syncComplete ? (
+                  'Synced'
+                ) : (
+                  'Save to Cloud'
+                )}
+              </Button>
+              {syncComplete && (
+                <p className="text-xs text-neutral-500">
+                  Last synced: {new Date().toLocaleTimeString()}
+                </p>
               )}
-            </Button>
+            </div>
           )}
         </div>
       </div>

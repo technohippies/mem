@@ -25,6 +25,7 @@ export interface Deck {
   price: number;
   is_public: boolean;
   forked_from?: string;
+  last_sync?: string;
 }
 
 // Flashcard types

@@ -109,6 +109,7 @@ export interface OrbisDeck {
     _metadata_context: string;
     plugins_data?: any;
     indexed_at: string;
+    last_sync: string;
 }
 
 export interface OrbisFlashcard {
@@ -143,7 +144,8 @@ export function orbisToAppDeck(orbisDeck: OrbisDeck) {
         language: orbisDeck.language,
         price: orbisDeck.price,
         is_public: orbisDeck.is_public,
-        forked_from: orbisDeck.forked_from
+        forked_from: orbisDeck.forked_from,
+        last_sync: orbisDeck.last_sync
     };
 }
 

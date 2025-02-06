@@ -9,33 +9,82 @@ import { CaretLeft } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
 
 const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
-  console.log('Fetching deck:', streamId);
-  const { rows } = await db
-    .select()
-    .from(DECK_MODEL)
-    .where({ stream_id: streamId })
-    .context(CONTEXT_ID)
-    .run();
-
-  if (rows.length === 0) {
-    throw new Error('Deck not found');
+  console.log('[DeckPage] Fetching deck:', streamId);
+  
+  // First try to get deck from IDB
+  const storage = await IDBStorage.getInstance();
+  const decks = await storage.getAllDecks();
+  const localDeck = decks.find(d => d.id === streamId);
+  
+  if (localDeck) {
+    console.log('[DeckPage] Found deck in IDB:', localDeck);
+    return localDeck;
   }
+  
+  // If not in IDB, fetch from Orbis
+  console.log('[DeckPage] Deck not found in IDB, fetching from Orbis');
+  try {
+    const { rows } = await db
+      .select()
+      .from(DECK_MODEL)
+      .where({ stream_id: streamId })
+      .context(CONTEXT_ID)
+      .run();
 
-  return orbisToAppDeck(rows[0] as OrbisDeck);
+    if (rows.length === 0) {
+      throw new Error('Deck not found');
+    }
+
+    const deck = orbisToAppDeck(rows[0] as OrbisDeck);
+    
+    // Store in IDB for offline access
+    await storage.storeDeck(deck);
+    console.log('[DeckPage] Stored deck in IDB:', deck);
+    
+    return deck;
+  } catch (error) {
+    console.error('[DeckPage] Failed to fetch from Orbis:', error);
+    // If we're offline and don't have the deck, we can't proceed
+    throw new Error('Deck not found and offline');
+  }
 };
 
 const getFlashcards = async (deckId: string): Promise<Flashcard[]> => {
-  console.log('Fetching cards for deck:', deckId);
-  const { rows } = await db
-    .select()
-    .from(FLASHCARD_MODEL)
-    .where({ deck_id: deckId })
-    .orderBy(['sort_order', 'asc'])
-    .context(CONTEXT_ID)
-    .run();
+  console.log('[DeckPage] Fetching cards for deck:', deckId);
+  
+  // First try to get cards from IDB
+  const storage = await IDBStorage.getInstance();
+  const localCards = await storage.getCardsForDeck(deckId);
+  
+  if (localCards.length > 0) {
+    console.log('[DeckPage] Found cards in IDB:', localCards.length);
+    return localCards;
+  }
+  
+  // If not in IDB, fetch from Orbis
+  console.log('[DeckPage] Cards not found in IDB, fetching from Orbis');
+  try {
+    const { rows } = await db
+      .select()
+      .from(FLASHCARD_MODEL)
+      .where({ deck_id: deckId })
+      .orderBy(['sort_order', 'asc'])
+      .context(CONTEXT_ID)
+      .run();
 
-  console.log('Found cards:', rows.length);
-  return rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+    console.log('[DeckPage] Found cards in Orbis:', rows.length);
+    const cards = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+    
+    // Store in IDB for offline access
+    await Promise.all(cards.map(card => storage.storeCard(card)));
+    console.log('[DeckPage] Stored cards in IDB');
+    
+    return cards;
+  } catch (error) {
+    console.error('[DeckPage] Failed to fetch from Orbis:', error);
+    // If we're offline and don't have the cards, return empty array
+    return [];
+  }
 };
 
 export const DeckPage = () => {
@@ -58,6 +107,38 @@ export const DeckPage = () => {
       try {
         if (!stream_id) throw new Error('No deck stream_id provided');
         const deckData = await getDeckByStreamId(stream_id);
+        console.log('[DeckPage] Loaded deck data:', deckData);
+        console.log('[DeckPage] Sync status:', {
+          last_sync: deckData.last_sync,
+          formatted: deckData.last_sync 
+            ? (() => {
+                const syncDate = new Date(deckData.last_sync);
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                if (syncDate >= today) {
+                  return syncDate.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  });
+                } else if (syncDate >= yesterday) {
+                  return `Yesterday ${syncDate.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  })}`;
+                } else {
+                  return syncDate.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                  });
+                }
+              })()
+            : 'Never'
+        });
         setDeck(deckData);
         const cardsData = await getFlashcards(stream_id);
         setCards(cardsData);
@@ -164,107 +245,129 @@ export const DeckPage = () => {
   return (
     <div className="flex flex-col min-h-screen">
       {/* Header */}
-      <div className="p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
-        <div className="flex justify-between items-center">
-          <IconButton
-            icon={<CaretLeft size={24} weight="regular" />}
-            label="Go back to home"
-            onClick={() => navigate('/')}
-            className="-ml-2"
-          />
-        </div>
+      <div className="flex items-center justify-between p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
+        <IconButton
+          icon={<CaretLeft size={24} weight="regular" />}
+          label="Go back to home"
+          onClick={() => navigate('/')}
+          className="-ml-2"
+        />
+        <p className="text-sm text-neutral-500">
+          Synced: {deck.last_sync 
+            ? (() => {
+                const syncDate = new Date(deck.last_sync);
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                if (syncDate >= today) {
+                  return syncDate.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  });
+                } else if (syncDate >= yesterday) {
+                  return `Yesterday ${syncDate.toLocaleString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                  })}`;
+                } else {
+                  return syncDate.toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric'
+                  });
+                }
+              })()
+            : 'Never'
+          }
+        </p>
       </div>
 
-      {/* Deck Info */}
-      <div className="flex flex-col gap-1 p-4">
-        <div className="flex gap-4 items-start">
-          {deck.image_hash && (
-            <img 
-              src={deck.image_hash} 
-              alt={deck.name}
-              className="w-24 h-24 rounded-lg object-cover flex-shrink-0"
-            />
-          )}
-          <div className="flex flex-col gap-2 text-left">
+      {/* Main Content Container */}
+      <div className="max-w-3xl mx-auto w-full px-4">
+        {/* Deck Info */}
+        <div className="flex flex-col gap-4 mt-4">
+          <div className="flex flex-col gap-2">
             <h1 className="text-2xl font-bold">{deck.name}</h1>
-            {deck.description && (
-              <p className="text-neutral-100">{deck.description}</p>
-            )}
+            <p className="text-neutral-400">{deck.description}</p>
+          </div>
 
-          </div>
-        </div>
-
-        {/* Card Stats */}
-        <div className="grid grid-cols-3 gap-4 mt-4">
-          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-            <span className="text-neutral-500 text-sm">New</span>
-            <span className="text-2xl font-bold mt-1">{cardStats.newCount}</span>
-          </div>
-          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-            <span className="text-neutral-500 text-sm">Review</span>
-            <span className="text-2xl font-bold mt-1">{cardStats.reviewCount}</span>
-          </div>
-          <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-            <span className="text-neutral-500 text-sm">Due</span>
-            <span className="text-2xl font-bold mt-1">{cardStats.dueCount}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Cards List */}
-      <div className="flex-1 p-4">
-        <h2 className="text-xl font-semibold mb-4">Cards ({cards.length})</h2>
-        <div className="flex flex-col gap-2">
-          {cards.map((card) => (
-            <div 
-              key={card.id}
-              className="p-4 bg-neutral-800/50 rounded-lg flex flex-col gap-1"
-            >
-              <div className="flex gap-4 items-center">
-                {card.front_image_cid && (
-                  <img 
-                    src={card.front_image_cid} 
-                    alt="Front" 
-                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                  />
-                )}
-                <p className="font-medium">{card.front}</p>
-                {card.audio_tts_cid && (
-                  <audio controls src={card.audio_tts_cid} className="ml-auto h-8" />
-                )}
-              </div>
-              <div className="flex gap-4 items-center text-neutral-400">
-                {card.back_image_cid && (
-                  <img 
-                    src={card.back_image_cid} 
-                    alt="Back" 
-                    className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                  />
-                )}
-                <p>{card.back}</p>
-              </div>
+          {/* Card Stats */}
+          <div className="grid grid-cols-3 gap-4 mt-4">
+            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+              <span className="text-neutral-500 text-sm">New</span>
+              <span className="text-2xl font-bold mt-1">{cardStats.newCount}</span>
             </div>
-          ))}
+            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+              <span className="text-neutral-500 text-sm">Review</span>
+              <span className="text-2xl font-bold mt-1">{cardStats.reviewCount}</span>
+            </div>
+            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+              <span className="text-neutral-500 text-sm">Due</span>
+              <span className="text-2xl font-bold mt-1">{cardStats.dueCount}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Cards List */}
+        <div className="flex-1 mt-8">
+          <h2 className="text-xl font-semibold mb-4">Cards ({cards.length})</h2>
+          <div className="flex flex-col gap-2">
+            {cards.map((card) => (
+              <div 
+                key={card.id}
+                className="p-4 bg-neutral-800/50 rounded-lg flex flex-col gap-1"
+              >
+                <div className="flex gap-4 items-center">
+                  {card.front_image_cid && (
+                    <img 
+                      src={card.front_image_cid} 
+                      alt="Front" 
+                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                    />
+                  )}
+                  <p className="font-medium">{card.front}</p>
+                  {card.audio_tts_cid && (
+                    <audio controls src={card.audio_tts_cid} className="ml-auto h-8" />
+                  )}
+                </div>
+                <div className="flex gap-4 items-center text-neutral-400">
+                  {card.back_image_cid && (
+                    <img 
+                      src={card.back_image_cid} 
+                      alt="Back" 
+                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                    />
+                  )}
+                  <p>{card.back}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
       {/* Study Button */}
       <div className="sticky bottom-0 p-4 bg-neutral-900 border-t border-neutral-800">
-        <Button 
-          variant="secondary"
-          className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
-          onClick={async () => {
-            if (deck) {
-              // Store deck in IndexedDB before navigating
-              const storage = await IDBStorage.getInstance();
-              console.log('[DeckPage] Storing deck before study:', deck);
-              await storage.storeDeck(deck);
-            }
-            navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
-          }}
-        >
-          {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}
-        </Button>
+        <div className="max-w-3xl mx-auto w-full px-4">
+          <Button 
+            variant="secondary"
+            className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+            onClick={async () => {
+              if (deck) {
+                // Store deck in IndexedDB before navigating
+                const storage = await IDBStorage.getInstance();
+                console.log('[DeckPage] Storing deck before study:', deck);
+                await storage.storeDeck(deck);
+              }
+              navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
+            }}
+          >
+            {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}
+          </Button>
+        </div>
       </div>
     </div>
   );
