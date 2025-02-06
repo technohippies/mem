@@ -10,7 +10,8 @@ export default defineConfig({
     react(), 
     tsconfigPaths(),
     VitePWA({ 
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
+      injectRegister: 'auto',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon.png', 'brain.svg'],
       manifest: {
         name: 'Mneme',
@@ -50,9 +51,11 @@ export default defineConfig({
         enabled: true,
         type: 'module'
       },
-      strategies: 'generateSW',
       workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp}'],
         cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
         sourcemap: true,
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3MB
         runtimeCaching: [

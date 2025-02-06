@@ -8,9 +8,27 @@
   Service-Worker-Allowed: /
   Cache-Control: public, max-age=0, must-revalidate
 
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
 
 /manifest.webmanifest
   Content-Type: application/manifest+json
-  Cache-Control: public, max-age=0, must-revalidate 
+  Cache-Control: public, max-age=0, must-revalidate
+
+/workbox-*.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.js
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.css
+  Cache-Control: public, max-age=31536000, immutable 
