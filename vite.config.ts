@@ -151,7 +151,14 @@ export default defineConfig({
       // Allow HMR from any host
       clientPort: 443,
       host: '0.0.0.0'
-    }
+    },
+    // Add allowedHosts configuration
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '.ngrok-free.app', // Allow all ngrok hosts
+      '.ngrok.io'
+    ]
   },
   build: {
     outDir: 'dist',
