@@ -1,5 +1,7 @@
+import type { IEVMProvider } from "@useorbis/db-sdk";
+
 interface Window {
-  ethereum: any;
+  ethereum: IEVMProvider | Record<string, unknown> | undefined;
 }
 
 export {}; 

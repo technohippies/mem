@@ -5,12 +5,31 @@ import { useAppKit, useAppKitAccount } from '@reown/appkit/react';
 import { Button } from '@/components/ui/button/Button';
 import { OrbisEVMAuth } from "@useorbis/db-sdk/auth";
 import { db } from '@/db/orbis';
+import type { IEVMProvider } from "@useorbis/db-sdk";
 
 // Add routes that require Ceramic auth ONLY for syncing
 const SYNC_REQUIRED_ROUTES = [
   '/study/',
   '/deck/',
 ];
+
+// Extend Window interface to include ethereum provider
+declare global {
+  interface Window {
+    ethereum?: IEVMProvider;
+  }
+}
+
+// Helper to validate if a provider is IEVMProvider
+function isEVMProvider(provider: unknown): provider is IEVMProvider {
+  if (!provider || typeof provider !== 'object') return false;
+  const p = provider as any;
+  return (
+    typeof p.request === 'function' &&
+    typeof p.enable === 'function' &&
+    typeof p.sendAsync === 'function'
+  );
+}
 
 export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isConnected, isInitializing, isCeramicConnected } = useAuthContext();
@@ -62,6 +81,10 @@ export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       if (!window.ethereum) {
         throw new Error('No Ethereum provider found');
+      }
+
+      if (!isEVMProvider(window.ethereum)) {
+        throw new Error('Invalid Ethereum provider');
       }
 
       console.log('[AuthWrapper] Creating Orbis auth instance...');

@@ -23,6 +23,7 @@ export const StudyPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncComplete, setSyncComplete] = useState(false);
+  const [isConnectingCeramic, setIsConnectingCeramic] = useState(false);
   const { 
     currentCard, 
     showingCard, 
@@ -111,6 +112,41 @@ export const StudyPage = () => {
     return () => { mounted = false; };
   }, [stream_id]);
 
+  const handleCeramicConnect = async () => {
+    if (!isWalletConnected || !address) {
+      try {
+        await appKit?.open();
+        return;
+      } catch (error) {
+        console.error('[StudyPage] Failed to connect wallet:', error);
+        toast({
+          title: "Error",
+          description: "Failed to connect wallet",
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    setIsConnectingCeramic(true);
+    try {
+      await connectCeramic();
+      toast({
+        title: "Success",
+        description: "Connected to Ceramic network"
+      });
+    } catch (error) {
+      console.error('[StudyPage] Failed to connect to Ceramic:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to connect to Ceramic network",
+        variant: "destructive"
+      });
+    } finally {
+      setIsConnectingCeramic(false);
+    }
+  };
+
   const handleSync = async () => {
     if (!stream_id) {
       toast({
@@ -135,7 +171,7 @@ export const StudyPage = () => {
         await appKit.open();
         return;
       } catch (error) {
-        console.error('Failed to open wallet connection:', error);
+        console.error('[StudyPage] Failed to open wallet:', error);
         toast({
           title: "Error",
           description: "Failed to connect wallet",
@@ -185,8 +221,6 @@ export const StudyPage = () => {
           ? progress.next_review
           : new Date().toISOString();
 
-        // Format progress data according to Orbis schema
-        // Only include fields that are in the model schema
         return {
           reps: progress.reps,
           lapses: progress.lapses,
@@ -194,7 +228,7 @@ export const StudyPage = () => {
           difficulty: progress.difficulty,
           last_review: last_review,
           next_review: next_review,
-          correct_reps: progress.reps - progress.lapses,  // Calculate correct reps
+          correct_reps: progress.reps - progress.lapses,
           flashcard_id: card.id,
           last_interval: progress.interval,
           retrievability: progress.retrievability
@@ -211,7 +245,7 @@ export const StudyPage = () => {
         .filter(progress => existingProgress.find(p => p.flashcard_id === progress.flashcard_id))
         .map(async progress => {
           const existingEntry = existingProgress.find(p => p.flashcard_id === progress.flashcard_id);
-          if (!existingEntry) return; // TypeScript safety
+          if (!existingEntry) return;
 
           console.log('Updating existing progress for card:', progress.flashcard_id);
           return db
@@ -253,7 +287,7 @@ export const StudyPage = () => {
       });
       setSyncComplete(true);
     } catch (error) {
-      console.error('Failed to sync:', error);
+      console.error('[StudyPage] Failed to sync:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to sync progress",
@@ -330,58 +364,17 @@ export const StudyPage = () => {
           ) : !isCeramicConnected ? (
             <Button 
               variant="secondary"
-              onClick={async () => {
-                try {
-                  if (!window.ethereum || !userAddress) {
-                    toast({
-                      title: "Error",
-                      description: "Please connect your wallet first",
-                      variant: "destructive"
-                    });
-                    return;
-                  }
-
-                  // Show loading state
-                  toast({
-                    title: "Connecting",
-                    description: "Initializing Ceramic connection...",
-                  });
-
-                  // Wait for wallet connection to stabilize
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-
-                  const provider = window.ethereum as unknown as IEVMProvider;
-                  const auth = new OrbisEVMAuth(provider);
-                  const result = await db.connectUser({ auth });
-                  
-                  if (!result) {
-                    throw new Error('Failed to connect to Ceramic');
-                  }
-
-                  // Check if we're actually connected
-                  const isConnected = await db.isUserConnected();
-                  if (!isConnected) {
-                    throw new Error('Failed to verify Ceramic connection');
-                  }
-
-                  toast({
-                    title: "Success",
-                    description: "Connected to Ceramic network"
-                  });
-
-                  // Refresh the page to update state
-                  window.location.reload();
-                } catch (error) {
-                  console.error('Failed to connect to Ceramic:', error);
-                  toast({
-                    title: "Error",
-                    description: error instanceof Error ? error.message : "Failed to connect to Ceramic network",
-                    variant: "destructive"
-                  });
-                }
-              }}
+              onClick={handleCeramicConnect}
+              disabled={isConnectingCeramic}
             >
-              Connect to Ceramic
+              {isConnectingCeramic ? (
+                <div className="flex items-center gap-2">
+                  <Loader size={16} />
+                  <span>Connecting to Ceramic...</span>
+                </div>
+              ) : (
+                'Connect to Ceramic'
+              )}
             </Button>
           ) : (
             <Button 
@@ -390,7 +383,10 @@ export const StudyPage = () => {
               disabled={isSyncing || syncComplete}
             >
               {isSyncing ? (
-                <Loader size={16} color="currentColor" />
+                <div className="flex items-center gap-2">
+                  <Loader size={16} />
+                  <span>Syncing...</span>
+                </div>
               ) : syncComplete ? (
                 <span>✓ Synced</span>
               ) : (

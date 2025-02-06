@@ -82,7 +82,9 @@ export class IDBStorage {
 
         if (!db.objectStoreNames.contains('auth_state')) {
           console.log('[IDBStorage] Creating auth_state store');
-          db.createObjectStore('auth_state', { keyPath: 'key' });
+          const authStore = db.createObjectStore('auth_state', { keyPath: ['key', 'address'] });
+          authStore.createIndex('key', 'key', { unique: false });
+          authStore.createIndex('address', 'address', { unique: false });
         }
       };
     });
@@ -610,7 +612,8 @@ export class IDBStorage {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction('auth_state', 'readwrite');
       const store = transaction.objectStore('auth_state');
-      const request = store.put({ key, address });
+      const data = { key, address };
+      const request = store.put(data);
 
       request.onerror = () => {
         reject(new Error('Failed to set auth state'));
