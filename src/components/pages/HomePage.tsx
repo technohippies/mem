@@ -6,19 +6,24 @@ import type { Deck } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
 import { Badge } from '@/components/ui/badge/Badge';
-import { Tag, Translate } from '@phosphor-icons/react';
+import { Tag, Translate, CloudSlash } from '@phosphor-icons/react';
 
 const getAvailableDecks = async (): Promise<Deck[]> => {
   console.log('Fetching decks from OrbisDB...');
-  const { rows } = await db
-    .select()
-    .from(DECK_MODEL)
-    .where({ is_public: true })
-    .context(CONTEXT_ID)
-    .run();
+  try {
+    const { rows } = await db
+      .select()
+      .from(DECK_MODEL)
+      .where({ is_public: true })
+      .context(CONTEXT_ID)
+      .run();
 
-  console.log('Got decks from OrbisDB:', rows);
-  return rows.map(row => orbisToAppDeck(row as OrbisDeck));
+    console.log('Got decks from OrbisDB:', rows);
+    return rows.map(row => orbisToAppDeck(row as OrbisDeck));
+  } catch (error) {
+    console.error('Failed to fetch decks from OrbisDB:', error);
+    return [];
+  }
 };
 
 const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) => {
@@ -118,50 +123,57 @@ export const HomePage = () => {
   const [userDecks, setUserDecks] = useState<Deck[]>([]);
   const [availableDecks, setAvailableDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [error, setError] = useState<string | null>(null);
+
+  // Monitor online/offline status
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const loadDecks = async () => {
       try {
+        setError(null);
         // First, get all decks from IndexedDB (our source of truth)
         const storage = await IDBStorage.getInstance();
         const localDecks = await storage.getAllDecks();
         const localDeckMap = new Map(localDecks.map(deck => [deck.id, deck]));
         setUserDecks(localDecks);
 
-        // Then get all available decks from Ceramic
-        const ceramicDecks = await getAvailableDecks();
-        
-        // Filter out decks that exist in IndexedDB
-        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
-        setAvailableDecks(newAvailableDecks);
+        // Then get all available decks from Ceramic if online
+        if (navigator.onLine) {
+          const ceramicDecks = await getAvailableDecks();
+          // Filter out decks that exist in IndexedDB
+          const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+          setAvailableDecks(newAvailableDecks);
+        }
 
         console.log('Local decks:', localDecks.length);
-        console.log('New available decks:', newAvailableDecks.length);
       } catch (err) {
-        setError('Failed to load decks');
         console.error(err);
+        setError('Failed to load decks');
       } finally {
         setLoading(false);
       }
     };
 
     loadDecks();
-  }, []);
+  }, [isOffline]); // Reload when online/offline status changes
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader size={48} />
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-        <p className="text-red-500">{error}</p>
-        <Button onClick={() => window.location.reload()}>Retry</Button>
       </div>
     );
   }
@@ -184,12 +196,38 @@ export const HomePage = () => {
 
       {/* Available Decks */}
       <section>
-        <h2 className="text-2xl font-bold mb-4">Available Decks</h2>
-        <div className="flex flex-col gap-2">
-          {availableDecks.map((deck) => (
-            <DeckCard key={deck.id} deck={deck} compact={false} />
-          ))}
-        </div>
+        <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+          Available Decks
+          {isOffline && (
+            <Badge variant="secondary" className="gap-1">
+              <CloudSlash weight="fill" size={14} />
+              Offline
+            </Badge>
+          )}
+        </h2>
+        {error ? (
+          <div className="text-neutral-400">
+            {isOffline ? (
+              "You're offline. Your saved decks are available above."
+            ) : (
+              <div className="flex items-center gap-2">
+                <span>Failed to load available decks.</span>
+                <Button onClick={() => window.location.reload()} variant="ghost" size="sm">
+                  Retry
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {availableDecks.map((deck) => (
+              <DeckCard key={deck.id} deck={deck} compact={false} />
+            ))}
+            {availableDecks.length === 0 && isOffline && (
+              <p className="text-neutral-400">Connect to the internet to browse available decks.</p>
+            )}
+          </div>
+        )}
       </section>
     </div>
   );

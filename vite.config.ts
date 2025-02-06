@@ -77,6 +77,36 @@ export default defineConfig({
                 statuses: [0, 200]
               }
             }
+          },
+          {
+            urlPattern: /^https:\/\/ceramic-orbisdb-mainnet-direct\.hirenodes\.io\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'orbis-api-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              },
+              networkTimeoutSeconds: 10
+            }
+          },
+          {
+            urlPattern: /^https:\/\/studio\.useorbis\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'orbis-studio-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
+              },
+              networkTimeoutSeconds: 10
+            }
           }
         ]
       }
