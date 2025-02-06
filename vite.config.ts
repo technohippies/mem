@@ -14,8 +14,8 @@ export default defineConfig({
       injectRegister: 'auto',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'maskable-icon.png', 'brain.svg'],
       manifest: {
-        name: 'Mneme',
-        short_name: 'Mneme',
+        name: 'Mem',
+        short_name: 'Mem',
         description: 'A spaced repetition flashcard app for Farcaster',
         theme_color: '#18181B',
         background_color: '#18181B',

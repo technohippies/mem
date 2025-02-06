@@ -125,7 +125,7 @@ const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) 
 export const HomePage = () => {
   const [userDecks, setUserDecks] = useState<Deck[]>([]);
   const [availableDecks, setAvailableDecks] = useState<Deck[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingAvailable, setLoadingAvailable] = useState(true);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,8 +133,7 @@ export const HomePage = () => {
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
-      // Optionally reload data when coming back online
-      window.location.reload();
+      loadAvailableDecks(); // Reload available decks when coming back online
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -147,51 +146,55 @@ export const HomePage = () => {
     };
   }, []);
 
+  // Load user's local decks immediately
   useEffect(() => {
-    const loadDecks = async () => {
+    const loadUserDecks = async () => {
       try {
-        setError(null);
-        // First, get all decks from IndexedDB (our source of truth)
         const storage = await IDBStorage.getInstance();
         const localDecks = await storage.getAllDecks();
         setUserDecks(localDecks);
-        
-        // Create a map of local decks for filtering
-        const localDeckMap = new Map(localDecks.map(deck => [deck.id, deck]));
-
-        // Then get all available decks from Ceramic
-        const ceramicDecks = await getAvailableDecks();
-        
-        // Filter out decks that exist in IndexedDB
-        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
-        setAvailableDecks(newAvailableDecks);
-
         console.log('Local decks:', localDecks.length);
       } catch (err) {
-        console.error('Error loading decks:', err);
-        // Only show error if we're online
-        if (navigator.onLine) {
-          setError('Failed to load available decks');
-        }
-      } finally {
-        setLoading(false);
+        console.error('Error loading local decks:', err);
       }
     };
 
-    loadDecks();
-  }, [isOffline]); // Reload when online/offline status changes
+    loadUserDecks();
+  }, []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader size={48} />
-      </div>
-    );
-  }
+  // Load available decks separately
+  const loadAvailableDecks = async () => {
+    setLoadingAvailable(true);
+    setError(null);
+    try {
+      // Create a map of local decks for filtering
+      const localDeckMap = new Map(userDecks.map(deck => [deck.id, deck]));
+      
+      // Get available decks from Ceramic
+      const ceramicDecks = await getAvailableDecks();
+      
+      // Filter out decks that exist in IndexedDB
+      const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+      setAvailableDecks(newAvailableDecks);
+    } catch (err) {
+      console.error('Error loading available decks:', err);
+      // Only show error if we're online
+      if (navigator.onLine) {
+        setError('Failed to load available decks');
+      }
+    } finally {
+      setLoadingAvailable(false);
+    }
+  };
+
+  // Load available decks on mount and when user decks change
+  useEffect(() => {
+    loadAvailableDecks();
+  }, [userDecks]); // Reload when user decks change to ensure proper filtering
 
   return (
     <div className="flex flex-col gap-8 p-4">
-      {/* User's Decks */}
+      {/* User's Decks - Always show immediately */}
       <section>
         <h2 className="text-2xl font-bold mb-4">Your Decks</h2>
         {userDecks.length === 0 ? (
@@ -205,7 +208,7 @@ export const HomePage = () => {
         )}
       </section>
 
-      {/* Available Decks */}
+      {/* Available Decks - Show loader only for this section */}
       <section>
         <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
           Available Decks
@@ -216,11 +219,15 @@ export const HomePage = () => {
             </Badge>
           )}
         </h2>
-        {error ? (
+        {loadingAvailable ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader size={32} />
+          </div>
+        ) : error ? (
           <div className="text-neutral-400">
             <div className="flex items-center gap-2">
               <span>Failed to load available decks.</span>
-              <Button onClick={() => window.location.reload()} variant="ghost" size="sm">
+              <Button onClick={loadAvailableDecks} variant="ghost" size="sm">
                 Retry
               </Button>
             </div>
