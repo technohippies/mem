@@ -80,9 +80,9 @@ export class IDBStorage {
           studySessions.createIndex('date', 'date', { unique: false });
         }
 
-        if (!db.objectStoreNames.contains('auth')) {
-          console.log('[IDBStorage] Creating auth store');
-          db.createObjectStore('auth', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains('auth_state')) {
+          console.log('[IDBStorage] Creating auth_state store');
+          db.createObjectStore('auth_state', { keyPath: 'key' });
         }
       };
     });
@@ -590,8 +590,8 @@ export class IDBStorage {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction('auth', 'readonly');
-      const store = transaction.objectStore('auth');
+      const transaction = this.db!.transaction('auth_state', 'readonly');
+      const store = transaction.objectStore('auth_state');
       const request = store.get(key);
 
       request.onerror = () => {
@@ -608,8 +608,8 @@ export class IDBStorage {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction('auth', 'readwrite');
-      const store = transaction.objectStore('auth');
+      const transaction = this.db!.transaction('auth_state', 'readwrite');
+      const store = transaction.objectStore('auth_state');
       const request = store.put({ key, address, timestamp });
 
       request.onerror = () => {
@@ -626,8 +626,8 @@ export class IDBStorage {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction('auth', 'readwrite');
-      const store = transaction.objectStore('auth');
+      const transaction = this.db!.transaction('auth_state', 'readwrite');
+      const store = transaction.objectStore('auth_state');
       const request = store.delete(key);
 
       request.onerror = () => {
