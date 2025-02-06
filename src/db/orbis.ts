@@ -1,5 +1,13 @@
 import { OrbisDB } from "@useorbis/db-sdk";
 
+interface OrbisConnectResult {
+  user: {
+    did: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
 // Load environment variables
 const CERAMIC_NODE_URL = import.meta.env.VITE_CERAMIC_NODE_URL || 'https://ceramic-orbisdb-mainnet-direct.hirenodes.io/';
 const ORBIS_NODE_URL = import.meta.env.VITE_ORBIS_NODE_URL || 'https://studio.useorbis.com/';
@@ -33,17 +41,14 @@ export const PROGRESS_MODEL = ORBIS_PROGRESS_MODEL_ID;
 // Session management
 let storageSession: Promise<void> | null = null;
 
-export async function initStorageSession() {
+export async function initStorageSession(authResult?: OrbisConnectResult) {
   if (!storageSession) {
     storageSession = (async () => {
       try {
         console.log('Initializing Orbis storage session...');
         
-        // Wait a bit for the connection to be fully established
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        // Get the current user's DID from the auth result
-        const details = await db.getConnectedUser();
+        // Get the current user's DID from the auth result or existing session
+        const details = authResult?.user || await db.getConnectedUser();
         console.log('Got user details:', details);
         
         if (!details) {
@@ -51,32 +56,13 @@ export async function initStorageSession() {
         }
 
         // Get the user's DID from the details object
-        const did = details.user?.did;
+        const did = 'user' in details ? details.user.did : details.did;
         if (!did) {
           throw new Error('No DID found in auth result');
         }
         console.log('Current user DID:', did);
-
-        // Create a test write to initialize the session
-        console.log('Performing test write to Orbis...');
-        const result = await db
-          .insert(PROGRESS_MODEL)
-          .value({
-            flashcard_id: 'test',
-            reps: 0,
-            lapses: 0,
-            stability: 0,
-            difficulty: 0,
-            last_review: new Date().toISOString(),
-            next_review: new Date().toISOString(),
-            correct_reps: 0,
-            last_interval: 0,
-            retrievability: 0
-          })
-          .context(CONTEXT_ID)
-          .run();
-
-        console.log('Test write successful:', result);
+        
+        // Session is now initialized
         console.log('Orbis storage session initialized successfully');
       } catch (error) {
         console.error('Failed to initialize storage session:', error);
@@ -98,6 +84,14 @@ export async function clearStorageSession() {
     console.error('Failed to clear storage session:', error);
     throw error;
   }
+}
+
+// Helper to check if a session is expired (older than 3 months)
+export function isSessionExpired(lastAuthenticated: string): boolean {
+  const lastAuth = new Date(lastAuthenticated);
+  const now = new Date();
+  const threeMonths = 1000 * 60 * 60 * 24 * 90; // 90 days in milliseconds
+  return now.getTime() - lastAuth.getTime() > threeMonths;
 }
 
 // Type definitions for Orbis models

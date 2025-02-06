@@ -75,7 +75,10 @@ export function useAuth() {
         const storage = await IDBStorage.getInstance();
         if (state.isConnected && state.userAddress) {
           console.log('Persisting auth state:', { address: state.userAddress });
-          await storage.setAuthState(AUTH_KEY, state.userAddress);
+          await storage.setAuthState(AUTH_KEY, {
+            address: state.userAddress,
+            lastAuthenticated: new Date().toISOString()
+          });
         } else if (!state.isConnected) {
           console.log('Clearing persisted auth state');
           await storage.clearAuthState(AUTH_KEY);
@@ -114,14 +117,22 @@ export function useAuth() {
       const auth = new OrbisEVMAuth(provider);
       
       console.log('[useAuth] Connecting to Orbis...');
-      await db.connectUser({ auth });
+      const authResult = await db.connectUser({ auth });
       
       console.log('[useAuth] Checking connection status...');
       const isConnected = await db.isUserConnected();
       
       if (isConnected) {
         console.log('[useAuth] Successfully connected, initializing storage session...');
-        await initStorageSession();
+        await initStorageSession(authResult);
+        
+        // Store the DID in auth state
+        const storage = await IDBStorage.getInstance();
+        await storage.setAuthState(AUTH_KEY, {
+          address: state.userAddress,
+          did: authResult.user.did,
+          lastAuthenticated: new Date().toISOString()
+        });
         
         setState(current => ({
           ...current,

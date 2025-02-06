@@ -11,7 +11,7 @@ interface ProgressRecord extends FSRSOutput {
 }
 
 export async function syncProgress(userId: string, deckId: string): Promise<void> {
-  const storage = await IDBStorage.getInstance(userId);
+  const storage = await IDBStorage.getInstance();
   
   // Get all progress for this user and deck
   const cards = await storage.getCardsForDeck(deckId);

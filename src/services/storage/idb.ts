@@ -1,6 +1,14 @@
 import type { Deck, Flashcard } from '@/types/models';
 import type { FSRSOutput } from '@/services/fsrs';
 
+// Auth state types
+interface AuthStateData {
+  address: string;
+  did?: string;
+  sessionData?: any; // Ceramic session data
+  lastAuthenticated?: string;
+}
+
 // Storage interface that matches our previous SQL interface
 export class IDBStorage {
   private static instance: IDBStorage | null = null;
@@ -82,9 +90,11 @@ export class IDBStorage {
 
         if (!db.objectStoreNames.contains('auth_state')) {
           console.log('[IDBStorage] Creating auth_state store');
-          const authStore = db.createObjectStore('auth_state', { keyPath: ['key', 'address'] });
-          authStore.createIndex('key', 'key', { unique: false });
+          const authStore = db.createObjectStore('auth_state', { keyPath: 'key' });
           authStore.createIndex('address', 'address', { unique: false });
+          authStore.createIndex('did', 'did', { unique: false });
+          authStore.createIndex('sessionData', 'sessionData', { unique: false });
+          authStore.createIndex('lastAuthenticated', 'lastAuthenticated', { unique: false });
         }
       };
     });
@@ -588,7 +598,7 @@ export class IDBStorage {
   }
 
   // Auth state operations
-  async getAuthState(key: string): Promise<{ address: string } | null> {
+  async getAuthState(key: string): Promise<AuthStateData | null> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
@@ -606,14 +616,18 @@ export class IDBStorage {
     });
   }
 
-  async setAuthState(key: string, address: string): Promise<void> {
+  async setAuthState(key: string, data: AuthStateData): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction('auth_state', 'readwrite');
       const store = transaction.objectStore('auth_state');
-      const data = { key, address };
-      const request = store.put(data);
+      // Include the key in the stored object
+      const storeData = {
+        ...data,
+        key
+      };
+      const request = store.put(storeData);
 
       request.onerror = () => {
         reject(new Error('Failed to set auth state'));
