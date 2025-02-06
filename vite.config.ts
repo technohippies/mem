@@ -142,7 +142,16 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true
+    open: true,
+    host: true, // Listen on all addresses
+    strictPort: true,
+    // Allow all hosts including ngrok
+    cors: true,
+    hmr: {
+      // Allow HMR from any host
+      clientPort: 443,
+      host: '0.0.0.0'
+    }
   },
   build: {
     outDir: 'dist',
