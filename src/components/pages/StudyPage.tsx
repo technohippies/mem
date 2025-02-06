@@ -3,7 +3,7 @@ import { StudyCard } from '@/components/core/StudyCard';
 import { useStudySession } from '@/hooks/useStudySession';
 import { IDBStorage } from '@/services/storage/idb';
 import { useState, useEffect } from 'react';
-import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard, PROGRESS_MODEL } from '@/db/orbis';
+import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard, PROGRESS_MODEL, DECK_MODEL, orbisToAppDeck, type OrbisDeck } from '@/db/orbis';
 import { Button } from '@/components/ui/button/Button';
 import { useToast } from '@/components/ui/toast/useToast';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -27,8 +27,6 @@ export const StudyPage = () => {
     showingCard, 
     isComplete, 
     isLoading,
-    newCardsToday,
-    reviewsToday,
     onGrade,
     reloadSession 
   } = useStudySession(stream_id || '', isInitialized, searchParams.get('mode') === 'extra');
@@ -67,8 +65,25 @@ export const StudyPage = () => {
         if (!mounted) return;
 
         if (existingCards.length === 0) {
-          // Fetch and store cards
-          console.log('No cards in storage, fetching from API...');
+          // First, fetch and store the deck
+          console.log('[StudyPage] Fetching deck from Orbis...');
+          const { rows: deckRows } = await db
+            .select()
+            .from(DECK_MODEL)
+            .where({ stream_id: stream_id })
+            .context(CONTEXT_ID)
+            .run();
+
+          if (deckRows.length === 0) {
+            throw new Error('Deck not found');
+          }
+
+          const deck = orbisToAppDeck(deckRows[0] as OrbisDeck);
+          await storage.storeDeck(deck);
+          console.log('[StudyPage] Stored deck in IDB:', deck);
+
+          // Then fetch and store cards
+          console.log('[StudyPage] No cards in storage, fetching from API...');
           const { rows } = await db
             .select()
             .from(FLASHCARD_MODEL)
@@ -78,25 +93,25 @@ export const StudyPage = () => {
             .run();
 
           const cardsToStore = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
-          console.log(`Storing ${cardsToStore.length} cards in storage...`);
+          console.log(`[StudyPage] Storing ${cardsToStore.length} cards in storage...`);
           await Promise.all(cardsToStore.map(card => storage.storeCard(card)));
           if (!mounted) return;
           
-          console.log('Cards stored successfully');
+          console.log('[StudyPage] Cards stored successfully');
           await reloadSession();
         } else {
-          console.log(`Found ${existingCards.length} cards in storage`);
+          console.log(`[StudyPage] Found ${existingCards.length} cards in storage`);
         }
 
         if (mounted) {
           setIsInitialized(true);
         }
       } catch (error) {
-        console.error('Failed to initialize cards:', error);
+        console.error('[StudyPage] Failed to initialize:', error);
         if (error instanceof Error && error.name === 'InvalidStateError' && retryCount < MAX_RETRIES) {
           // If database is closing, retry after a delay
           retryCount++;
-          console.log(`Retrying initialization (attempt ${retryCount}/${MAX_RETRIES})...`);
+          console.log(`[StudyPage] Retrying initialization (attempt ${retryCount}/${MAX_RETRIES})...`);
           setTimeout(initCards, RETRY_DELAY);
           return;
         }
@@ -321,83 +336,95 @@ export const StudyPage = () => {
 
   if (isComplete) {
     return (
-      <div className="flex flex-col items-center justify-center h-dvh gap-4 p-4 relative">
-        <div className="absolute top-4 left-4">
+      <div className="flex flex-col h-dvh">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 bg-neutral-900/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-900/60">
           <IconButton
             icon={<X size={24} weight="regular" />}
             label="Close study session"
             onClick={() => navigate(-1)}
+            className="-ml-2"
           />
         </div>
-        <h1 className="text-2xl font-bold">Session Complete!</h1>
-        <div className="flex flex-col items-center gap-2 text-neutral-400">
-          <p>New cards: {newCardsToday}</p>
-          <p>Reviews: {reviewsToday}</p>
+
+        {/* Main content */}
+        <div className="flex-grow">
+          <div className="flex flex-col items-center justify-center h-full p-4">
+            <h1 className="text-2xl font-bold mb-12">Complete!</h1>
+            
+            {/* Save progress section */}
+            <div className="w-full max-w-md space-y-2">
+              <h2 className="font-semibold text-lg">⚠️ Don't Lose Your Progress</h2>
+              <div className="space-y-3">
+                <p className="text-neutral-300">Save your progress to web3 for free. This also adds to your Streak 🔥!</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col w-full max-w-xs gap-2">
-          {!isWalletConnected ? (
-            <Button 
-              variant="secondary"
-              onClick={async () => {
-                console.log('[StudyPage] Connect wallet button clicked');
-                try {
-                  await appKit?.open();
-                } catch (error) {
-                  console.error('[StudyPage] Failed to open wallet:', error);
-                  toast({
-                    title: "Error",
-                    description: "Failed to connect wallet",
-                    variant: "destructive"
-                  });
-                }
-              }}
-            >
-              Connect Wallet
-            </Button>
-          ) : !isConnected ? (
-            <Button
-              variant="secondary"
-              onClick={() => connect(address || '')}
-              className="w-32"
-            >
-              Initialize Connection
-            </Button>
-          ) : !isCeramicConnected ? (
-            <Button 
-              variant="secondary"
-              onClick={handleCeramicConnect}
-              disabled={isConnectingCeramic}
-              className="w-32"
-            >
-              {isConnectingCeramic ? (
-                <Loader size={16} />
-              ) : (
-                'Connect to Ceramic'
-              )}
-            </Button>
-          ) : (
-            <div className="flex flex-col items-center gap-2">
+
+        {/* Button section - same structure as study card buttons */}
+        <div className="sticky bottom-0 w-full p-4 bg-neutral-900 border-t border-neutral-800">
+          <div className="w-full max-w-md mx-auto">
+            {!isWalletConnected ? (
               <Button 
                 variant="secondary"
-                onClick={handleSync}
-                disabled={isSyncing || syncComplete}
-                className="w-32"
+                onClick={async () => {
+                  console.log('[StudyPage] Connect wallet button clicked');
+                  try {
+                    await appKit?.open();
+                  } catch (error) {
+                    console.error('[StudyPage] Failed to open wallet:', error);
+                    toast({
+                      title: "Error",
+                      description: "Failed to connect wallet",
+                      variant: "destructive"
+                    });
+                  }
+                }}
+                className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
               >
-                {isSyncing ? (
+                Connect Wallet
+              </Button>
+            ) : !isConnected ? (
+              <Button
+                variant="secondary"
+                onClick={() => connect(address || '')}
+                className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                Initialize Connection
+              </Button>
+            ) : !isCeramicConnected ? (
+              <Button 
+                variant="secondary"
+                onClick={handleCeramicConnect}
+                disabled={isConnectingCeramic}
+                className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+              >
+                {isConnectingCeramic ? (
                   <Loader size={16} />
-                ) : syncComplete ? (
-                  'Synced'
                 ) : (
-                  'Save to Cloud'
+                  'Save'
                 )}
               </Button>
-              {syncComplete && (
-                <p className="text-xs text-neutral-500">
-                  Last synced: {new Date().toLocaleTimeString()}
-                </p>
-              )}
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-col gap-2 w-full">
+                <Button 
+                  variant="secondary"
+                  onClick={handleSync}
+                  disabled={isSyncing || syncComplete}
+                  className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+                >
+                  {isSyncing ? (
+                    <Loader size={16} />
+                  ) : syncComplete ? (
+                    'Synced'
+                  ) : (
+                    'Save to Web3'
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

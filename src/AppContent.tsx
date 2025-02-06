@@ -4,6 +4,7 @@ import { AuthWrapper } from './components/auth/AuthWrapper';
 import { HomePage } from '@/components/pages/HomePage';
 import { DeckPage } from '@/components/pages/DeckPage';
 import { StudyPage } from '@/components/pages/StudyPage';
+import { FrameTestPage } from '@/components/pages/FrameTestPage';
 import { Toaster } from 'sonner';
 import { InstallBanner } from './components/ui/pwa/InstallBanner';
 
@@ -21,6 +22,7 @@ const AppContent: React.FC = () => {
                 <StudyPage />
               </AuthWrapper>
             } />
+            <Route path="/frame/test" element={<FrameTestPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>

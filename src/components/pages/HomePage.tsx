@@ -6,7 +6,7 @@ import type { Deck } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
 import { Badge } from '@/components/ui/badge/Badge';
-import { Tag, Translate, CloudSlash } from '@phosphor-icons/react';
+import { CloudSlash } from '@phosphor-icons/react';
 
 const getAvailableDecks = async (): Promise<Deck[]> => {
   console.log('Fetching decks from OrbisDB...');
@@ -99,23 +99,6 @@ const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) 
           {!compact && deck.description && (
             <span className="text-sm text-neutral-400">{deck.description}</span>
           )}
-          {!compact && (
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary" className="gap-1">
-                <Tag weight="fill" size={14} />
-                {deck.category}
-              </Badge>
-              <Badge variant="secondary" className="gap-1">
-                <Translate weight="fill" size={14} />
-                {deck.language}
-              </Badge>
-              {deck.price > 0 && (
-                <Badge variant="default" className="text-green-400">
-                  ${deck.price}
-                </Badge>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </Link>
@@ -128,12 +111,64 @@ export const HomePage = () => {
   const [loadingAvailable, setLoadingAvailable] = useState(true);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [error, setError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Load user's local decks immediately
+  useEffect(() => {
+    const loadUserDecks = async () => {
+      try {
+        const storage = await IDBStorage.getInstance();
+        const localDecks = await storage.getAllDecks();
+        setUserDecks(localDecks);
+        setInitialized(true);
+        console.log('Local decks loaded:', localDecks.length);
+      } catch (err) {
+        console.error('Error loading local decks:', err);
+        setInitialized(true);
+      }
+    };
+
+    loadUserDecks();
+  }, []);
+
+  // Load available decks only after user decks are loaded
+  useEffect(() => {
+    if (!initialized) return;
+
+    const loadAvailableDecks = async () => {
+      setLoadingAvailable(true);
+      setError(null);
+      try {
+        // Get available decks from Ceramic
+        const ceramicDecks = await getAvailableDecks();
+        
+        // Create map of user decks for filtering
+        const localDeckMap = new Map(userDecks.map(deck => [deck.id, deck]));
+        
+        // Filter out decks that exist in user's collection
+        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+        
+        setAvailableDecks(newAvailableDecks);
+      } catch (err) {
+        console.error('Error loading available decks:', err);
+        if (navigator.onLine) {
+          setError('Failed to load available decks');
+        }
+      } finally {
+        setLoadingAvailable(false);
+      }
+    };
+
+    loadAvailableDecks();
+  }, [initialized, userDecks]);
 
   // Monitor online/offline status
   useEffect(() => {
     const handleOnline = () => {
       setIsOffline(false);
-      loadAvailableDecks(); // Reload available decks when coming back online
+      if (initialized) {
+        setLoadingAvailable(true); // This will trigger the other effect to reload
+      }
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -144,53 +179,7 @@ export const HomePage = () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, []);
-
-  // Load user's local decks immediately
-  useEffect(() => {
-    const loadUserDecks = async () => {
-      try {
-        const storage = await IDBStorage.getInstance();
-        const localDecks = await storage.getAllDecks();
-        setUserDecks(localDecks);
-        console.log('Local decks:', localDecks.length);
-      } catch (err) {
-        console.error('Error loading local decks:', err);
-      }
-    };
-
-    loadUserDecks();
-  }, []);
-
-  // Load available decks separately
-  const loadAvailableDecks = async () => {
-    setLoadingAvailable(true);
-    setError(null);
-    try {
-      // Create a map of local decks for filtering
-      const localDeckMap = new Map(userDecks.map(deck => [deck.id, deck]));
-      
-      // Get available decks from Ceramic
-      const ceramicDecks = await getAvailableDecks();
-      
-      // Filter out decks that exist in IndexedDB
-      const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
-      setAvailableDecks(newAvailableDecks);
-    } catch (err) {
-      console.error('Error loading available decks:', err);
-      // Only show error if we're online
-      if (navigator.onLine) {
-        setError('Failed to load available decks');
-      }
-    } finally {
-      setLoadingAvailable(false);
-    }
-  };
-
-  // Load available decks on mount and when user decks change
-  useEffect(() => {
-    loadAvailableDecks();
-  }, [userDecks]); // Reload when user decks change to ensure proper filtering
+  }, [initialized]);
 
   return (
     <div className="flex flex-col gap-8 p-4">
@@ -211,7 +200,7 @@ export const HomePage = () => {
       {/* Available Decks - Show loader only for this section */}
       <section>
         <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-          Available Decks
+          Trending Decks
           {isOffline && (
             <Badge variant="secondary" className="gap-1">
               <CloudSlash weight="fill" size={14} />
@@ -227,7 +216,7 @@ export const HomePage = () => {
           <div className="text-neutral-400">
             <div className="flex items-center gap-2">
               <span>Failed to load available decks.</span>
-              <Button onClick={loadAvailableDecks} variant="ghost" size="sm">
+              <Button onClick={() => setLoadingAvailable(true)} variant="ghost" size="sm">
                 Retry
               </Button>
             </div>

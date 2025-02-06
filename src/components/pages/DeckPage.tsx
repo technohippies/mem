@@ -21,7 +21,7 @@ const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
     return localDeck;
   }
   
-  // If not in IDB, fetch from Orbis
+  // If not in IDB, fetch from Orbis but don't store
   console.log('[DeckPage] Deck not found in IDB, fetching from Orbis');
   try {
     const { rows } = await db
@@ -36,10 +36,7 @@ const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
     }
 
     const deck = orbisToAppDeck(rows[0] as OrbisDeck);
-    
-    // Store in IDB for offline access
-    await storage.storeDeck(deck);
-    console.log('[DeckPage] Stored deck in IDB:', deck);
+    console.log('[DeckPage] Fetched deck from Orbis:', deck);
     
     return deck;
   } catch (error) {
@@ -61,7 +58,7 @@ const getFlashcards = async (deckId: string): Promise<Flashcard[]> => {
     return localCards;
   }
   
-  // If not in IDB, fetch from Orbis
+  // If not in IDB, fetch from Orbis but don't store
   console.log('[DeckPage] Cards not found in IDB, fetching from Orbis');
   try {
     const { rows } = await db
@@ -74,11 +71,6 @@ const getFlashcards = async (deckId: string): Promise<Flashcard[]> => {
 
     console.log('[DeckPage] Found cards in Orbis:', rows.length);
     const cards = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
-    
-    // Store in IDB for offline access
-    await Promise.all(cards.map(card => storage.storeCard(card)));
-    console.log('[DeckPage] Stored cards in IDB');
-    
     return cards;
   } catch (error) {
     console.error('[DeckPage] Failed to fetch from Orbis:', error);
@@ -252,37 +244,36 @@ export const DeckPage = () => {
           onClick={() => navigate('/')}
           className="-ml-2"
         />
-        <p className="text-sm text-neutral-500">
-          Synced: {deck.last_sync 
-            ? (() => {
-                const syncDate = new Date(deck.last_sync);
-                const now = new Date();
-                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-                const yesterday = new Date(today);
-                yesterday.setDate(yesterday.getDate() - 1);
-                
-                if (syncDate >= today) {
-                  return syncDate.toLocaleString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                  });
-                } else if (syncDate >= yesterday) {
-                  return `Yesterday ${syncDate.toLocaleString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                  })}`;
-                } else {
-                  return syncDate.toLocaleString('en-US', {
-                    month: 'short',
-                    day: 'numeric'
-                  });
-                }
-              })()
-            : 'Never'
-          }
-        </p>
+        {deck.stream_id && (
+          <p className="text-sm text-neutral-500">
+            Synced: {deck.last_sync ? (() => {
+              const syncDate = new Date(deck.last_sync);
+              const now = new Date();
+              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const yesterday = new Date(today);
+              yesterday.setDate(yesterday.getDate() - 1);
+              
+              if (syncDate >= today) {
+                return syncDate.toLocaleString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                });
+              } else if (syncDate >= yesterday) {
+                return `Yesterday ${syncDate.toLocaleString('en-US', {
+                  hour: 'numeric',
+                  minute: '2-digit',
+                  hour12: true
+                })}`;
+              } else {
+                return syncDate.toLocaleString('en-US', {
+                  month: 'short',
+                  day: 'numeric'
+                });
+              }
+            })() : 'Never'}
+          </p>
+        )}
       </div>
 
       {/* Main Content Container */}
