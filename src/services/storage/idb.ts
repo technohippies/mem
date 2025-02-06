@@ -599,7 +599,8 @@ export class IDBStorage {
       };
 
       request.onsuccess = () => {
-        resolve(request.result || null);
+        const result = request.result;
+        resolve(result?.data || null);  // Extract the data from the nested structure
       };
     });
   }
@@ -610,7 +611,15 @@ export class IDBStorage {
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction('auth_state', 'readwrite');
       const store = transaction.objectStore('auth_state');
-      const request = store.put({ key, address, timestamp });
+      // Structure the data to match the keyPath 'key'
+      const data = {
+        key,  // This matches the keyPath
+        data: {  // Nest the actual data
+          address,
+          timestamp
+        }
+      };
+      const request = store.put(data);
 
       request.onerror = () => {
         reject(new Error('Failed to set auth state'));
