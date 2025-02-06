@@ -15,6 +15,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@farcaster/frame-sdk": "^0.0.26",
     "@phosphor-icons/react": "^2.1.7",
     "@radix-ui/react-dialog": "^1.1.5",
     "@radix-ui/react-slot": "^1.1.1",
@@ -37,10 +38,10 @@
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.5.2",
     "vaul": "^1.1.2",
-    "viem": "^2.22.21",
+    "viem": "^2.22.22",
     "vite": "^5.4.8",
     "vitest": "^3.0.5",
-    "wagmi": "^2.14.9",
+    "wagmi": "^2.14.10",
     "zod": "^3.24.1"
   },
   "devDependencies": {
