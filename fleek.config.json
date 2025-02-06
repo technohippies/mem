@@ -1,0 +1,9 @@
+{
+  "sites": [
+    {
+      "slug": "wide-eye-harsh",
+      "distDir": "dist",
+      "buildCommand": "npm run build"
+    }
+  ]
+}

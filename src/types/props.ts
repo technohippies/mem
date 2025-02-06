@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Deck, FlashCard, StudyState, CardRating } from './models';
+import type { Deck, Flashcard, StudyState, CardRating } from './models';
 
 // Common props
 export interface BaseProps {
@@ -9,7 +9,7 @@ export interface BaseProps {
 
 // Card component props
 export interface FlashCardProps extends BaseProps {
-  card: FlashCard;
+  card: Flashcard;
   state: StudyState;
   onFlip: () => void;
   onRate?: (rating: CardRating) => void;
@@ -51,8 +51,8 @@ export interface DeckFormProps extends BaseProps {
 
 export interface CardFormProps extends BaseProps {
   deckId: string;
-  initialValues?: Partial<FlashCard>;
-  onSubmit: (values: Partial<FlashCard>) => void;
+  initialValues?: Partial<Flashcard>;
+  onSubmit: (values: Partial<Flashcard>) => void;
   isLoading?: boolean;
 }
 
