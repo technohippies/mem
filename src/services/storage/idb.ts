@@ -82,7 +82,7 @@ export class IDBStorage {
 
         if (!db.objectStoreNames.contains('auth')) {
           console.log('[IDBStorage] Creating auth store');
-          const auth = db.createObjectStore('auth', { keyPath: 'key' });
+          db.createObjectStore('auth', { keyPath: 'key' });
         }
       };
     });
