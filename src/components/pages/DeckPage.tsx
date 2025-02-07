@@ -4,10 +4,11 @@ import { Button } from '@/components/ui/button/Button';
 import type { Deck, Flashcard } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
-import { CaretLeft } from '@phosphor-icons/react';
+import { CaretLeft, Play } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
 import { useTableland } from '@/contexts/TablelandContext';
 import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
+import { Skeleton } from '@/components/ui/skeleton/Skeleton';
 
 const getDeckByStreamId = async (streamId: string, tablelandClient: any): Promise<Deck> => {
   console.log('[DeckPage] Fetching deck:', streamId);
@@ -103,6 +104,12 @@ const getFlashcards = async (deckId: string, tablelandClient: any): Promise<Flas
     console.warn('[DeckPage] No cards found in IDB either');
     return [];
   }
+};
+
+// Add helper function for IPFS URL conversion
+const getIpfsUrl = (cid: string) => {
+  if (!cid) return '';
+  return `https://public.w3ipfs.storage/ipfs/${cid}`;
 };
 
 export const DeckPage = () => {
@@ -333,36 +340,55 @@ export const DeckPage = () => {
         <div className="flex-1 mt-8">
           <h2 className="text-xl font-semibold mb-4">Cards ({cards.length})</h2>
           <div className="flex flex-col gap-2">
-            {cards.map((card, index) => (
-              <div 
-                key={`${card.id || 'card'}-${index}`}
-                className="p-4 bg-neutral-800/50 rounded-lg flex flex-col gap-1"
-              >
-                <div className="flex gap-4 items-center">
+            {loading ? (
+              // Skeleton loading state
+              Array.from({ length: 3 }).map((_, index) => (
+                <div key={`skeleton-${index}`} className="p-4 bg-neutral-800/50 rounded-lg flex gap-4 min-h-[4rem]">
+                  <div className="flex-1 flex flex-col justify-center gap-1">
+                    <Skeleton className="h-4 w-3/4" />
+                    <Skeleton className="h-4 w-1/2" />
+                  </div>
+                </div>
+              ))
+            ) : (
+              cards.map((card, index) => (
+                <div 
+                  key={`${card.id || 'card'}-${index}`}
+                  className="px-4 py-3 bg-neutral-800/50 rounded-lg flex gap-4 min-h-[3.5rem]"
+                >
+                  {/* Image (only if exists) */}
                   {card.front_image_cid && (
                     <img 
-                      src={card.front_image_cid} 
+                      src={getIpfsUrl(card.front_image_cid)} 
                       alt="Front" 
-                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                      className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
                     />
                   )}
-                  <p className="font-medium">{card.front}</p>
+
+                  {/* Text Content */}
+                  <div className="flex-1 flex flex-col justify-center">
+                    <p className="font-medium leading-snug line-clamp-1">{card.front}</p>
+                    <p className="text-neutral-400 leading-snug line-clamp-1">{card.back}</p>
+                  </div>
+
+                  {/* Audio Button */}
                   {card.audio_tts_cid && (
-                    <audio controls src={card.audio_tts_cid} className="ml-auto h-8" />
+                    <button 
+                      className="pr-4 hover:text-neutral-200 transition-colors self-center flex-shrink-0"
+                      onClick={() => {
+                        if (card.audio_tts_cid) {
+                          const audio = new Audio(getIpfsUrl(card.audio_tts_cid));
+                          audio.play();
+                        }
+                      }}
+                      title="Play audio"
+                    >
+                      <Play size={20} weight="fill" className="text-neutral-400" />
+                    </button>
                   )}
                 </div>
-                <div className="flex gap-4 items-center text-neutral-400">
-                  {card.back_image_cid && (
-                    <img 
-                      src={card.back_image_cid} 
-                      alt="Back" 
-                      className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-                    />
-                  )}
-                  <p>{card.back}</p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

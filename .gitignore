@@ -186,6 +186,7 @@ coverage
 build
 dist
 dist-ssr
+dev-dist
 *.local
 
 # Local development
