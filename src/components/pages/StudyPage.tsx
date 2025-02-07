@@ -13,8 +13,8 @@ import { CaretLeft, X } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
 import { useTableland } from '@/contexts/TablelandContext';
 import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
-import { getOrbisClient } from '@/services/orbis';
-import { PROGRESS_MODEL } from '@/db/orbis';
+import { PROGRESS_MODEL, CONTEXT_ID } from '@/db/orbis';
+import { db } from '@/db/orbis';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -194,10 +194,35 @@ export const StudyPage = () => {
       const cards = await storage.getCardsForDeck(stream_id);
       console.log('Syncing progress for cards:', cards);
 
+      // Use the stream_id directly as the deck_id
+      const deckId = stream_id;
+      console.log('Using deck_id:', deckId);
+
+      // Get existing progress from Orbis
+      console.log('Querying Orbis with deck_id:', deckId);
+      const whereClause = { deck_id: deckId };
+      console.log('Using where clause:', whereClause);
+      
+      const query = db
+        .select()
+        .from(PROGRESS_MODEL)
+        .where(whereClause)
+        .context(CONTEXT_ID);
+
+      console.log('Query built:', query.toString());
+      const { rows: existingProgress } = await query.run();
+
+      console.log('Existing progress in Orbis:', existingProgress);
+
       // Get local progress
       const progressPromises = cards.map(async card => {
         const progress = await storage.getCardProgress(card.id, 'user');
-        if (!progress) return null;
+        if (!progress) {
+          console.log('No progress found for card:', card.id);
+          return null;
+        }
+
+        console.log('Progress found for card:', card.id, progress);
 
         // Handle dates safely
         const last_review = typeof progress.review_date === 'string'
@@ -208,7 +233,7 @@ export const StudyPage = () => {
           ? progress.next_review
           : new Date().toISOString();
 
-        return {
+        const progressData = {
           reps: progress.reps,
           lapses: progress.lapses,
           stability: progress.stability,
@@ -218,8 +243,12 @@ export const StudyPage = () => {
           correct_reps: progress.reps - progress.lapses,
           flashcard_id: `tableland-${card.id}`,
           last_interval: progress.interval,
-          retrievability: progress.retrievability
+          retrievability: progress.retrievability,
+          deck_id: deckId
         };
+
+        console.log('Formatted progress data:', progressData);
+        return progressData;
       });
       
       const progressToSync = (await Promise.all(progressPromises))
@@ -227,40 +256,79 @@ export const StudyPage = () => {
 
       console.log('Local progress to sync:', progressToSync);
 
-      if (progressToSync.length > 0) {
-        // Sync all progress entries to Ceramic/Orbis at once
-        const orbis = await getOrbisClient();
-        console.log('Syncing progress to Ceramic...');
-        
-        try {
-          console.log('Syncing records:', progressToSync);
-          const result = await orbis.createPost({
-            context: import.meta.env.VITE_ORBIS_USER_PROGRESS || PROGRESS_MODEL,
-            data: progressToSync
-          });
-          
-          if (result.status !== 200) {
-            console.error('Failed to sync records');
-            throw new Error('Failed to sync progress');
-          }
-          
-          console.log('Synced records:', result.doc);
+      // First, handle updates for existing entries
+      const updatePromises = progressToSync
+        .filter(progress => existingProgress.some(p => p.flashcard_id === progress.flashcard_id))
+        .map(async progress => {
+          const existingEntry = existingProgress.find(p => p.flashcard_id === progress.flashcard_id);
+          if (!existingEntry) return;
 
-          toast({
-            title: "Success",
-            description: `Synced ${progressToSync.length} records successfully`
-          });
-          setSyncComplete(true);
+          console.log('Updating existing progress for card:', progress.flashcard_id);
+          return db
+            .update(existingEntry.stream_id)
+            .set(progress)
+            .run();
+        });
+
+      if (updatePromises.length > 0) {
+        const updateResults = await Promise.all(updatePromises.filter(Boolean));
+        console.log('Updated existing entries:', updateResults.length);
+      }
+
+      // Then handle new entries
+      const newEntries = progressToSync
+        .filter(progress => !existingProgress.some(p => p.flashcard_id === progress.flashcard_id));
+
+      if (newEntries.length > 0) {
+        console.log('Inserting new entries:', newEntries.length);
+        
+        // Format entries to match the expected schema
+        const formattedEntries = newEntries.map(entry => {
+          // Extract the numeric ID from the flashcard_id (remove 'tableland-' prefix)
+          const flashcardId = parseInt(entry.flashcard_id.replace('tableland-', ''));
+          
+          return {
+            // Convert IDs to numbers
+            deck_id: parseInt(entry.deck_id),
+            flashcard_id: flashcardId,
+            reps: entry.reps,
+            lapses: entry.lapses,
+            stability: entry.stability,
+            difficulty: entry.difficulty,
+            last_review: entry.last_review,
+            next_review: entry.next_review
+          };
+        });
+
+        console.log('Formatted entries for insert:', formattedEntries);
+
+        try {
+          // Use bulk insert for better performance
+          const result = await db
+            .insertBulk(PROGRESS_MODEL)
+            .values(formattedEntries)
+            .context(CONTEXT_ID)
+            .run();
+
+          console.log('Bulk insert result:', result);
         } catch (error) {
-          console.error('Failed to sync progress:', error);
-          toast({
-            title: "Error",
-            description: error instanceof Error ? error.message : "Failed to sync progress",
-            variant: "destructive"
-          });
+          console.error('Failed to bulk insert entries:', error);
+          
+          // If bulk insert fails, try individual inserts
+          console.log('Falling back to individual inserts...');
+          for (const entry of formattedEntries) {
+            try {
+              console.log('Inserting entry:', entry);
+              await db
+                .insert(PROGRESS_MODEL)
+                .value(entry)
+                .context(CONTEXT_ID)
+                .run();
+            } catch (error) {
+              console.error('Failed to insert entry:', entry, error);
+            }
+          }
         }
-      } else {
-        console.log('No progress to sync');
       }
 
       // Update last sync time
