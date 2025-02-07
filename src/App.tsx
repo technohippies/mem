@@ -5,6 +5,7 @@ import { createAppKit, useAppKitProvider } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
 import { mainnet, optimism } from '@reown/appkit/networks';
 import { AuthProvider } from './contexts/AuthContext';
+import { TablelandProvider } from './contexts/TablelandContext';
 
 // Initialize AppKit
 createAppKit({
@@ -48,7 +49,9 @@ const App: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppContent />
+        <TablelandProvider>
+          <AppContent />
+        </TablelandProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
-import { db, CONTEXT_ID, DECK_MODEL, FLASHCARD_MODEL, orbisToAppDeck, orbisToAppFlashcard, type OrbisDeck, type OrbisFlashcard } from '@/db/orbis';
 import type { Deck, Flashcard } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
 import { CaretLeft } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
+import { useTableland } from '@/contexts/TablelandContext';
+import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
 
-const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
+const getDeckByStreamId = async (streamId: string, tablelandClient: any): Promise<Deck> => {
   console.log('[DeckPage] Fetching deck:', streamId);
   
   // First try to get deck from IDB
@@ -21,60 +22,85 @@ const getDeckByStreamId = async (streamId: string): Promise<Deck> => {
     return localDeck;
   }
   
-  // If not in IDB, fetch from Orbis but don't store
-  console.log('[DeckPage] Deck not found in IDB, fetching from Orbis');
+  // If not in IDB, fetch from Tableland
+  console.log('[DeckPage] Deck not found in IDB, fetching from Tableland');
   try {
-    const { rows } = await db
-      .select()
-      .from(DECK_MODEL)
-      .where({ stream_id: streamId })
-      .context(CONTEXT_ID)
-      .run();
-
-    if (rows.length === 0) {
+    const tablelandDeck = await tablelandClient.getDeck(parseInt(streamId));
+    if (!tablelandDeck) {
       throw new Error('Deck not found');
     }
 
-    const deck = orbisToAppDeck(rows[0] as OrbisDeck);
-    console.log('[DeckPage] Fetched deck from Orbis:', deck);
+    const deck = tablelandToAppDeck(tablelandDeck);
+    console.log('[DeckPage] Fetched deck from Tableland:', deck);
     
     return deck;
   } catch (error) {
-    console.error('[DeckPage] Failed to fetch from Orbis:', error);
+    console.error('[DeckPage] Failed to fetch from Tableland:', error);
     // If we're offline and don't have the deck, we can't proceed
     throw new Error('Deck not found and offline');
   }
 };
 
-const getFlashcards = async (deckId: string): Promise<Flashcard[]> => {
+const getFlashcards = async (deckId: string, tablelandClient: any): Promise<Flashcard[]> => {
   console.log('[DeckPage] Fetching cards for deck:', deckId);
   
-  // First try to get cards from IDB
-  const storage = await IDBStorage.getInstance();
-  const localCards = await storage.getCardsForDeck(deckId);
-  
-  if (localCards.length > 0) {
-    console.log('[DeckPage] Found cards in IDB:', localCards.length);
-    return localCards;
-  }
-  
-  // If not in IDB, fetch from Orbis but don't store
-  console.log('[DeckPage] Cards not found in IDB, fetching from Orbis');
   try {
-    const { rows } = await db
-      .select()
-      .from(FLASHCARD_MODEL)
-      .where({ deck_id: deckId })
-      .orderBy(['sort_order', 'asc'])
-      .context(CONTEXT_ID)
-      .run();
+    // Always try Tableland first to ensure we have the latest data
+    console.log('[DeckPage] Fetching from Tableland...');
+    const tablelandCards = await tablelandClient.getFlashcards(parseInt(deckId));
+    console.log('[DeckPage] Raw Tableland cards:', JSON.stringify(tablelandCards, null, 2));
+    
+    if (!Array.isArray(tablelandCards) || tablelandCards.length === 0) {
+      throw new Error('No cards found in Tableland');
+    }
 
-    console.log('[DeckPage] Found cards in Orbis:', rows.length);
-    const cards = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+    // Convert to app format
+    const cards = tablelandCards.map((card, index) => {
+      const mappedCard = tablelandToAppFlashcard({
+        ...card,
+        id: card.id || index + 1, // Ensure we have an ID
+        deck_id: parseInt(deckId) // Ensure we have the correct deck ID
+      });
+      console.log(`[DeckPage] Mapped card ${index + 1}/${tablelandCards.length}:`, mappedCard);
+      return mappedCard;
+    });
+    
+    // Store in IDB for offline access
+    const storage = await IDBStorage.getInstance();
+    console.log('[DeckPage] Storing cards in IDB:', cards.length);
+    
+    // Store each card individually and wait for all operations to complete
+    const storePromises = cards.map(async (card: Flashcard) => {
+      try {
+        console.log(`[DeckPage] Storing card ${card.id} in IDB`);
+        await storage.storeCard(card);
+        console.log(`[DeckPage] Successfully stored card ${card.id}`);
+      } catch (err) {
+        console.error(`[DeckPage] Failed to store card ${card.id}:`, err);
+      }
+    });
+    
+    await Promise.all(storePromises);
+    console.log('[DeckPage] All cards stored in IDB');
+    
+    // Verify storage
+    const storedCards = await storage.getCardsForDeck(deckId);
+    console.log('[DeckPage] Verified stored cards:', storedCards.length);
+    
     return cards;
   } catch (error) {
-    console.error('[DeckPage] Failed to fetch from Orbis:', error);
-    // If we're offline and don't have the cards, return empty array
+    console.error('[DeckPage] Failed to fetch from Tableland:', error);
+    
+    // If Tableland fetch fails, try to get from IDB
+    const storage = await IDBStorage.getInstance();
+    const localCards = await storage.getCardsForDeck(deckId);
+    
+    if (localCards.length > 0) {
+      console.log('[DeckPage] Using cards from IDB:', localCards.length);
+      return localCards;
+    }
+    
+    console.warn('[DeckPage] No cards found in IDB either');
     return [];
   }
 };
@@ -93,12 +119,13 @@ export const DeckPage = () => {
     reviewCount: 0,
     dueCount: 0,
   });
+  const { client: tablelandClient } = useTableland();
 
   useEffect(() => {
     const loadDeck = async () => {
       try {
         if (!stream_id) throw new Error('No deck stream_id provided');
-        const deckData = await getDeckByStreamId(stream_id);
+        const deckData = await getDeckByStreamId(stream_id, tablelandClient);
         console.log('[DeckPage] Loaded deck data:', deckData);
         console.log('[DeckPage] Sync status:', {
           last_sync: deckData.last_sync,
@@ -132,7 +159,7 @@ export const DeckPage = () => {
             : 'Never'
         });
         setDeck(deckData);
-        const cardsData = await getFlashcards(stream_id);
+        const cardsData = await getFlashcards(stream_id, tablelandClient);
         setCards(cardsData);
 
         // Check if user has studied today
@@ -215,7 +242,7 @@ export const DeckPage = () => {
     };
 
     loadDeck();
-  }, [stream_id]);
+  }, [stream_id, tablelandClient]);
 
   if (loading) {
     return (
@@ -306,9 +333,9 @@ export const DeckPage = () => {
         <div className="flex-1 mt-8">
           <h2 className="text-xl font-semibold mb-4">Cards ({cards.length})</h2>
           <div className="flex flex-col gap-2">
-            {cards.map((card) => (
+            {cards.map((card, index) => (
               <div 
-                key={card.id}
+                key={`${card.id || 'card'}-${index}`}
                 className="p-4 bg-neutral-800/50 rounded-lg flex flex-col gap-1"
               >
                 <div className="flex gap-4 items-center">
@@ -347,13 +374,51 @@ export const DeckPage = () => {
             variant="secondary"
             className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
             onClick={async () => {
-              if (deck) {
-                // Store deck in IndexedDB before navigating
-                const storage = await IDBStorage.getInstance();
-                console.log('[DeckPage] Storing deck before study:', deck);
-                await storage.storeDeck(deck);
+              if (!deck || cards.length === 0) {
+                console.warn('[DeckPage] Cannot start study: no deck or cards');
+                return;
               }
-              navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
+
+              try {
+                const storage = await IDBStorage.getInstance();
+                console.log('[DeckPage] Preparing to store deck and cards:', {
+                  deckId: deck.id,
+                  cardCount: cards.length
+                });
+                
+                // Store deck
+                await storage.storeDeck(deck);
+                console.log('[DeckPage] Deck stored successfully');
+                
+                // Store cards with verification
+                console.log('[DeckPage] Storing cards:', cards);
+                for (const card of cards) {
+                  const cardToStore = {
+                    ...card,
+                    id: card.id.toString(),
+                    deck_id: deck.id.toString()
+                  };
+                  await storage.storeCard(cardToStore);
+                  console.log(`[DeckPage] Stored card: ${cardToStore.id}`);
+                }
+                
+                // Verify storage
+                const storedCards = await storage.getCardsForDeck(deck.id);
+                console.log('[DeckPage] Verified stored cards:', {
+                  expected: cards.length,
+                  actual: storedCards.length
+                });
+                
+                if (storedCards.length !== cards.length) {
+                  throw new Error(`Storage verification failed: expected ${cards.length} cards but found ${storedCards.length}`);
+                }
+                
+                console.log('[DeckPage] Successfully stored deck and cards in IDB');
+                navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
+              } catch (error) {
+                console.error('[DeckPage] Failed to store deck/cards:', error);
+                // TODO: Show error toast to user
+              }
             }}
           >
             {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}

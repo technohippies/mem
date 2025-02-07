@@ -3,7 +3,6 @@ import { StudyCard } from '@/components/core/StudyCard';
 import { useStudySession } from '@/hooks/useStudySession';
 import { IDBStorage } from '@/services/storage/idb';
 import { useState, useEffect } from 'react';
-import { db, CONTEXT_ID, FLASHCARD_MODEL, orbisToAppFlashcard, type OrbisFlashcard, PROGRESS_MODEL, DECK_MODEL, orbisToAppDeck, type OrbisDeck } from '@/db/orbis';
 import { Button } from '@/components/ui/button/Button';
 import { useToast } from '@/components/ui/toast/useToast';
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -12,6 +11,8 @@ import { AuthWrapper } from '@/components/auth/AuthWrapper';
 import { Loader } from '@/components/ui/loader/Loader';
 import { CaretLeft, X } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
+import { useTableland } from '@/contexts/TablelandContext';
+import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -34,6 +35,7 @@ export const StudyPage = () => {
   const { isConnected, isCeramicConnected, userAddress, connectCeramic, connect } = useAuthContext();
   const appKit = useAppKit();
   const { isConnected: isWalletConnected, address } = useAppKitAccount();
+  const { client: tablelandClient } = useTableland();
 
   // Effect to handle wallet connection state
   useEffect(() => {
@@ -66,33 +68,21 @@ export const StudyPage = () => {
 
         if (existingCards.length === 0) {
           // First, fetch and store the deck
-          console.log('[StudyPage] Fetching deck from Orbis...');
-          const { rows: deckRows } = await db
-            .select()
-            .from(DECK_MODEL)
-            .where({ stream_id: stream_id })
-            .context(CONTEXT_ID)
-            .run();
-
-          if (deckRows.length === 0) {
+          console.log('[StudyPage] Fetching deck from Tableland...');
+          const tablelandDeck = await tablelandClient.getDeck(parseInt(stream_id));
+          if (!tablelandDeck) {
             throw new Error('Deck not found');
           }
 
-          const deck = orbisToAppDeck(deckRows[0] as OrbisDeck);
+          const deck = tablelandToAppDeck(tablelandDeck);
           await storage.storeDeck(deck);
           console.log('[StudyPage] Stored deck in IDB:', deck);
 
           // Then fetch and store cards
-          console.log('[StudyPage] No cards in storage, fetching from API...');
-          const { rows } = await db
-            .select()
-            .from(FLASHCARD_MODEL)
-            .where({ deck_id: stream_id })
-            .orderBy(['sort_order', 'asc'])
-            .context(CONTEXT_ID)
-            .run();
-
-          const cardsToStore = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+          console.log('[StudyPage] No cards in storage, fetching from Tableland...');
+          const tablelandCards = await tablelandClient.getFlashcards(parseInt(stream_id));
+          const cardsToStore = tablelandCards.map(tablelandToAppFlashcard);
+          
           console.log(`[StudyPage] Storing ${cardsToStore.length} cards in storage...`);
           await Promise.all(cardsToStore.map(card => storage.storeCard(card)));
           if (!mounted) return;
@@ -123,7 +113,7 @@ export const StudyPage = () => {
 
     initCards();
     return () => { mounted = false; };
-  }, [stream_id]);
+  }, [stream_id, tablelandClient, reloadSession]);
 
   const handleCeramicConnect = async () => {
     if (!isWalletConnected || !address) {
@@ -199,26 +189,8 @@ export const StudyPage = () => {
 
     try {
       const storage = await IDBStorage.getInstance();
-      const { rows } = await db
-        .select()
-        .from(FLASHCARD_MODEL)
-        .where({ deck_id: stream_id })
-        .orderBy(['sort_order', 'asc'])
-        .context(CONTEXT_ID)
-        .run();
-
-      const cards = rows.map(row => orbisToAppFlashcard(row as OrbisFlashcard));
+      const cards = await storage.getCardsForDeck(stream_id);
       console.log('Syncing progress for cards:', cards);
-
-      // Get existing progress from Orbis
-      const { rows: existingProgress } = await db
-        .select()
-        .from(PROGRESS_MODEL)
-        .where({ deck_id: stream_id })
-        .context(CONTEXT_ID)
-        .run();
-
-      console.log('Existing progress in Orbis:', existingProgress);
 
       // Get local progress
       const progressPromises = cards.map(async card => {
@@ -253,48 +225,9 @@ export const StudyPage = () => {
 
       console.log('Local progress to sync:', progressToSync);
 
-      // First, handle updates for existing entries
-      const updatesPromises = progressToSync
-        .filter(progress => existingProgress.find(p => p.flashcard_id === progress.flashcard_id))
-        .map(async progress => {
-          const existingEntry = existingProgress.find(p => p.flashcard_id === progress.flashcard_id);
-          if (!existingEntry) return;
-
-          console.log('Updating existing progress for card:', progress.flashcard_id);
-          return db
-            .update(existingEntry.stream_id)
-            .set(progress)
-            .run();
-        });
-
-      // Wait for all updates to complete
-      await Promise.all(updatesPromises);
-
-      // Then bulk insert new entries
-      const newEntries = progressToSync
-        .filter(progress => !existingProgress.find(p => p.flashcard_id === progress.flashcard_id));
-
-      if (newEntries.length > 0) {
-        console.log('Bulk inserting progress for', newEntries.length, 'cards');
-        const { success, errors } = await db
-          .insertBulk(PROGRESS_MODEL)
-          .values(newEntries)
-          .context(CONTEXT_ID)
-          .run();
-
-        if (errors.length) {
-          console.error('Errors occurred during bulk insert:', errors);
-          toast({
-            title: "Warning",
-            description: `${success.length} entries succeeded, ${errors.length} failed`,
-            variant: "destructive"
-          });
-        } else {
-          console.log('Bulk insert successful for all entries');
-          // Update last sync time
-          await storage.updateDeckLastSync(stream_id);
-        }
-      }
+      // TODO: Implement progress syncing with Tableland
+      // For now, just update the last sync time
+      await storage.updateDeckLastSync(stream_id);
       
       toast({
         title: "Success",

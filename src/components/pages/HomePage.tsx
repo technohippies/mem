@@ -1,27 +1,22 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
-import { db, CONTEXT_ID, DECK_MODEL, orbisToAppDeck, type OrbisDeck } from '@/db/orbis';
 import type { Deck } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
 import { Loader } from '@/components/ui/loader/Loader';
 import { Badge } from '@/components/ui/badge/Badge';
 import { CloudSlash } from '@phosphor-icons/react';
+import { useTableland } from '@/contexts/TablelandContext';
+import { tablelandToAppDeck, type TablelandDeck } from '@/types/tableland';
 
-const getAvailableDecks = async (): Promise<Deck[]> => {
-  console.log('Fetching decks from OrbisDB...');
+const getAvailableDecks = async (tablelandClient: { getPublicDecks: () => Promise<TablelandDeck[]> }): Promise<Deck[]> => {
+  console.log('Fetching decks from Tableland...');
   try {
-    const { rows } = await db
-      .select()
-      .from(DECK_MODEL)
-      .where({ is_public: true })
-      .context(CONTEXT_ID)
-      .run();
-
-    console.log('Got decks from OrbisDB:', rows);
-    return rows.map(row => orbisToAppDeck(row as OrbisDeck));
+    const tablelandDecks = await tablelandClient.getPublicDecks();
+    console.log('Got decks from Tableland:', tablelandDecks);
+    return tablelandDecks.map(tablelandToAppDeck);
   } catch (error) {
-    console.error('Failed to fetch decks from OrbisDB:', error);
+    console.error('Failed to fetch decks from Tableland:', error);
     if (!navigator.onLine) {
       return []; // Return empty array when offline
     }
@@ -112,6 +107,7 @@ export const HomePage = () => {
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const { client: tablelandClient } = useTableland();
 
   // Load user's local decks immediately
   useEffect(() => {
@@ -139,14 +135,14 @@ export const HomePage = () => {
       setLoadingAvailable(true);
       setError(null);
       try {
-        // Get available decks from Ceramic
-        const ceramicDecks = await getAvailableDecks();
+        // Get available decks from Tableland
+        const tablelandDecks = await getAvailableDecks(tablelandClient);
         
         // Create map of user decks for filtering
         const localDeckMap = new Map(userDecks.map(deck => [deck.id, deck]));
         
         // Filter out decks that exist in user's collection
-        const newAvailableDecks = ceramicDecks.filter(deck => !localDeckMap.has(deck.id));
+        const newAvailableDecks = tablelandDecks.filter(deck => !localDeckMap.has(deck.id));
         
         setAvailableDecks(newAvailableDecks);
       } catch (err) {
@@ -160,7 +156,7 @@ export const HomePage = () => {
     };
 
     loadAvailableDecks();
-  }, [initialized, userDecks]);
+  }, [initialized, userDecks, tablelandClient]);
 
   // Monitor online/offline status
   useEffect(() => {
