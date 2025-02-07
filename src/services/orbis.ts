@@ -17,11 +17,11 @@ export const getOrbisClient = async () => {
       try {
         console.log('Raw input:', data);
 
-        // If data is an array, take the first item
-        const record = Array.isArray(data) ? data[0] : data;
-
-        // Only include fields that exist in the schema
-        const cleanedData = {
+        // Handle both single records and arrays
+        const records = Array.isArray(data) ? data : [data];
+        
+        // Clean each record to only include schema fields
+        const cleanedRecords = records.map(record => ({
           reps: record.reps,
           lapses: record.lapses,
           stability: record.stability,
@@ -31,21 +31,30 @@ export const getOrbisClient = async () => {
           correct_reps: record.correct_reps,
           flashcard_id: record.flashcard_id,
           last_interval: record.last_interval,
-          retrievability: record.retrievability
-        };
+          retrievability: record.retrievability,
+          _context: context // Add context to each record
+        }));
 
-        console.log('Cleaned data for insert:', cleanedData);
+        console.log('Cleaned data for bulk insert:', cleanedRecords);
 
-        const result = await db
-          .insert(PROGRESS_MODEL)
-          .value(cleanedData)
+        const { success, errors } = await db
+          .insertBulk(PROGRESS_MODEL)
+          .values(cleanedRecords)
           .run();
 
-        console.log('Insert result:', result);
+        console.log('Bulk insert result:', { success, errors });
+
+        if (errors.length > 0) {
+          console.error('Some records failed to insert:', errors);
+          return {
+            status: 500,
+            doc: null
+          };
+        }
 
         return {
           status: 200,
-          doc: result
+          doc: success
         };
       } catch (error) {
         console.error('Failed to create post:', error);

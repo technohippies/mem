@@ -228,26 +228,23 @@ export const StudyPage = () => {
       console.log('Local progress to sync:', progressToSync);
 
       if (progressToSync.length > 0) {
-        // Sync all progress entries to Ceramic/Orbis one at a time
+        // Sync all progress entries to Ceramic/Orbis at once
         const orbis = await getOrbisClient();
         console.log('Syncing progress to Ceramic...');
         
         try {
-          // Process each record sequentially
-          for (const record of progressToSync) {
-            console.log('Syncing record:', record);
-            const result = await orbis.createPost({
-              context: import.meta.env.VITE_ORBIS_USER_PROGRESS || PROGRESS_MODEL,
-              data: record
-            });
-            
-            if (result.status !== 200) {
-              console.error('Failed to sync record');
-              throw new Error('Failed to sync progress');
-            }
-            
-            console.log('Synced record:', result.doc);
+          console.log('Syncing records:', progressToSync);
+          const result = await orbis.createPost({
+            context: import.meta.env.VITE_ORBIS_USER_PROGRESS || PROGRESS_MODEL,
+            data: progressToSync
+          });
+          
+          if (result.status !== 200) {
+            console.error('Failed to sync records');
+            throw new Error('Failed to sync progress');
           }
+          
+          console.log('Synced records:', result.doc);
 
           toast({
             title: "Success",
