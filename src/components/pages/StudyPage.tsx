@@ -13,6 +13,8 @@ import { CaretLeft, X } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
 import { useTableland } from '@/contexts/TablelandContext';
 import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
+import { getOrbisClient } from '@/services/orbis';
+import { PROGRESS_MODEL } from '@/db/orbis';
 
 export const StudyPage = () => {
   const { stream_id } = useParams<{ stream_id: string }>();
@@ -211,10 +213,10 @@ export const StudyPage = () => {
           lapses: progress.lapses,
           stability: progress.stability,
           difficulty: progress.difficulty,
-          last_review: last_review,
-          next_review: next_review,
+          last_review,
+          next_review,
           correct_reps: progress.reps - progress.lapses,
-          flashcard_id: card.id,
+          flashcard_id: `tableland-${card.id}`,
           last_interval: progress.interval,
           retrievability: progress.retrievability
         };
@@ -225,8 +227,46 @@ export const StudyPage = () => {
 
       console.log('Local progress to sync:', progressToSync);
 
-      // TODO: Implement progress syncing with Tableland
-      // For now, just update the last sync time
+      if (progressToSync.length > 0) {
+        // Sync all progress entries to Ceramic/Orbis one at a time
+        const orbis = await getOrbisClient();
+        console.log('Syncing progress to Ceramic...');
+        
+        try {
+          // Process each record sequentially
+          for (const record of progressToSync) {
+            console.log('Syncing record:', record);
+            const result = await orbis.createPost({
+              context: import.meta.env.VITE_ORBIS_USER_PROGRESS || PROGRESS_MODEL,
+              data: record
+            });
+            
+            if (result.status !== 200) {
+              console.error('Failed to sync record');
+              throw new Error('Failed to sync progress');
+            }
+            
+            console.log('Synced record:', result.doc);
+          }
+
+          toast({
+            title: "Success",
+            description: `Synced ${progressToSync.length} records successfully`
+          });
+          setSyncComplete(true);
+        } catch (error) {
+          console.error('Failed to sync progress:', error);
+          toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to sync progress",
+            variant: "destructive"
+          });
+        }
+      } else {
+        console.log('No progress to sync');
+      }
+
+      // Update last sync time
       await storage.updateDeckLastSync(stream_id);
       
       toast({
