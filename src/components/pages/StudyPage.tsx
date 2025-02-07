@@ -200,7 +200,7 @@ export const StudyPage = () => {
 
       // Get existing progress from Orbis
       console.log('Querying Orbis with deck_id:', deckId);
-      const whereClause = { deck_id: deckId };
+      const whereClause = { deck_id: parseInt(deckId) };
       console.log('Using where clause:', whereClause);
       
       const query = db
@@ -233,22 +233,17 @@ export const StudyPage = () => {
           ? progress.next_review
           : new Date().toISOString();
 
-        const progressData = {
+        // Format the progress data consistently for both updates and inserts
+        return {
+          deck_id: parseInt(deckId),
+          flashcard_id: parseInt(card.id),
           reps: progress.reps,
           lapses: progress.lapses,
           stability: progress.stability,
           difficulty: progress.difficulty,
           last_review,
-          next_review,
-          correct_reps: progress.reps - progress.lapses,
-          flashcard_id: `tableland-${card.id}`,
-          last_interval: progress.interval,
-          retrievability: progress.retrievability,
-          deck_id: deckId
+          next_review
         };
-
-        console.log('Formatted progress data:', progressData);
-        return progressData;
       });
       
       const progressToSync = (await Promise.all(progressPromises))
@@ -256,78 +251,52 @@ export const StudyPage = () => {
 
       console.log('Local progress to sync:', progressToSync);
 
-      // First, handle updates for existing entries
-      const updatePromises = progressToSync
-        .filter(progress => existingProgress.some(p => p.flashcard_id === progress.flashcard_id))
-        .map(async progress => {
-          const existingEntry = existingProgress.find(p => p.flashcard_id === progress.flashcard_id);
-          if (!existingEntry) return;
-
-          console.log('Updating existing progress for card:', progress.flashcard_id);
-          return db
-            .update(existingEntry.stream_id)
-            .set(progress)
-            .run();
-        });
-
-      if (updatePromises.length > 0) {
-        const updateResults = await Promise.all(updatePromises.filter(Boolean));
-        console.log('Updated existing entries:', updateResults.length);
-      }
-
-      // Then handle new entries
-      const newEntries = progressToSync
-        .filter(progress => !existingProgress.some(p => p.flashcard_id === progress.flashcard_id));
-
-      if (newEntries.length > 0) {
-        console.log('Inserting new entries:', newEntries.length);
-        
-        // Format entries to match the expected schema
-        const formattedEntries = newEntries.map(entry => {
-          // Extract the numeric ID from the flashcard_id (remove 'tableland-' prefix)
-          const flashcardId = parseInt(entry.flashcard_id.replace('tableland-', ''));
-          
-          return {
-            // Convert IDs to numbers
-            deck_id: parseInt(entry.deck_id),
-            flashcard_id: flashcardId,
-            reps: entry.reps,
-            lapses: entry.lapses,
-            stability: entry.stability,
-            difficulty: entry.difficulty,
-            last_review: entry.last_review,
-            next_review: entry.next_review
-          };
-        });
-
-        console.log('Formatted entries for insert:', formattedEntries);
-
+      // Process each progress entry
+      for (const progress of progressToSync) {
         try {
-          // Use bulk insert for better performance
-          const result = await db
-            .insertBulk(PROGRESS_MODEL)
-            .values(formattedEntries)
-            .context(CONTEXT_ID)
-            .run();
+          // Find existing entry for this card
+          console.log('Looking for existing entry with:', {
+            deck_id: progress.deck_id,
+            flashcard_id: progress.flashcard_id,
+            existingEntries: existingProgress.map(p => ({
+              deck_id: p.deck_id,
+              flashcard_id: p.flashcard_id,
+              stream_id: p.stream_id
+            }))
+          });
 
-          console.log('Bulk insert result:', result);
-        } catch (error) {
-          console.error('Failed to bulk insert entries:', error);
-          
-          // If bulk insert fails, try individual inserts
-          console.log('Falling back to individual inserts...');
-          for (const entry of formattedEntries) {
-            try {
-              console.log('Inserting entry:', entry);
-              await db
-                .insert(PROGRESS_MODEL)
-                .value(entry)
-                .context(CONTEXT_ID)
-                .run();
-            } catch (error) {
-              console.error('Failed to insert entry:', entry, error);
-            }
+          const existingEntry = existingProgress.find(
+            p => Number(p.deck_id) === progress.deck_id && Number(p.flashcard_id) === progress.flashcard_id
+          );
+
+          if (existingEntry) {
+            // Update existing entry
+            console.log('Found existing entry:', {
+              stream_id: existingEntry.stream_id,
+              deck_id: existingEntry.deck_id,
+              flashcard_id: existingEntry.flashcard_id
+            });
+            console.log('Updating with:', progress);
+            
+            await db
+              .update(existingEntry.stream_id)
+              .set(progress)
+              .run();
+          } else {
+            // Insert new entry
+            console.log('No existing entry found for:', {
+              deck_id: progress.deck_id,
+              flashcard_id: progress.flashcard_id
+            });
+            
+            await db
+              .insert(PROGRESS_MODEL)
+              .value(progress)
+              .context(CONTEXT_ID)
+              .run();
           }
+        } catch (error) {
+          console.error('Failed to sync progress for card:', progress.flashcard_id, error);
         }
       }
 
@@ -429,7 +398,7 @@ export const StudyPage = () => {
                 onClick={() => connect(address || '')}
                 className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
               >
-                Initialize Connection
+                Create Database
               </Button>
             ) : !isCeramicConnected ? (
               <Button 
