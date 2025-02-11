@@ -2,42 +2,101 @@ import { Database } from '@tableland/sdk';
 import type { TablelandDeck, TablelandFlashcard } from '@/types/tableland';
 import { ethers } from "ethers";
 import type { Eip1193Provider } from 'ethers';
-import { LitNodeClient } from "@lit-protocol/lit-node-client";
-import { LIT_NETWORK } from '@lit-protocol/constants';
+import type { ILitNodeClient } from '@lit-protocol/types';
 import { SiweMessage } from 'siwe';
 import type { Flashcard } from '@/types/models';
 import { decryptToString } from '@lit-protocol/encryption';
+import { CHAIN_CONFIG } from '@/config/networks';
 
 // Table names - these are unique to your deployment
 export const DECKS_TABLE = 'decks_v5_84532_103';
 
 // Contract configuration
-const DECK_PURCHASE_ADDRESS = "0xa7Ca51c3B25Ea15c365d59540a42D8570546450f";
+const DECK_PURCHASE_ADDRESS = "0xA26277f442eD2E41E70E4a06E3849807D972e4C3";
 
 export class TablelandClient {
   private db: Database;
-  private litClient: LitNodeClient | null = null;
   private userAddress: string | null = null;
   private authSig: any = null;
+  private litClient: ILitNodeClient | null = null;
+  private litClientInitialized: boolean = false;
 
   constructor() {
     this.db = new Database();
-    this.litClient = new LitNodeClient({
-      litNetwork: LIT_NETWORK.DatilTest,
-      debug: true,
-      minNodeCount: 2,
-      checkNodeAttestation: false
-    });
+  }
+
+  setLitClient(client: ILitNodeClient | null) {
+    // Only update if we're getting a new client or explicitly clearing
+    if (client) {
+      // If we're getting a new client, ensure it's connected first
+      if (!client.ready) {
+        console.log('[TablelandClient] Received unready Lit client, connecting...');
+        // Don't set the client until it's ready
+        client.connect().then(() => {
+          console.log('[TablelandClient] Lit client connected successfully');
+          // Only set the client if it's ready
+          if (client.ready) {
+            this.litClient = client;
+            this.litClientInitialized = true;
+          }
+        }).catch(err => {
+          console.error('[TablelandClient] Failed to connect Lit client:', err);
+          // Clear state on connection failure
+          this.litClient = null;
+          this.litClientInitialized = false;
+          this.authSig = null;
+        });
+      } else {
+        // Client is already ready
+        console.log('[TablelandClient] Lit client initialized and ready');
+        this.litClient = client;
+        this.litClientInitialized = true;
+      }
+    } else if (this.litClient !== null) { // Only clear if we actually have a client
+      // If we're clearing the client, just clean up our references
+      console.log('[TablelandClient] Clearing Lit client state');
+      this.litClient = null;
+      this.litClientInitialized = false;
+      this.authSig = null;
+    }
+  }
+
+  async ensureLitClientInitialized() {
+    if (!this.litClient) {
+      throw new Error("Lit Protocol client not available. Please ensure you are connected to your wallet and try again.");
+    }
+
+    // If client exists but isn't ready, try to connect it
+    if (!this.litClient.ready) {
+      console.log('[TablelandClient] Lit client not ready, connecting...');
+      try {
+        await this.litClient.connect();
+        // Verify the client is actually ready after connecting
+        if (!this.litClient.ready) {
+          throw new Error("Lit client failed to initialize properly");
+        }
+        this.litClientInitialized = true;
+        console.log('[TablelandClient] Lit client connected successfully');
+      } catch (err) {
+        console.error('[TablelandClient] Failed to connect Lit client:', err);
+        // Clear state on connection failure
+        this.litClient = null;
+        this.litClientInitialized = false;
+        this.authSig = null;
+        throw new Error("Failed to initialize Lit Protocol client. Please ensure you are connected to your wallet and try again.");
+      }
+    }
+
+    return this.litClient;
   }
 
   private async getAuthSig(): Promise<any> {
-    if (this.authSig) {
+    // If we have a valid auth signature and the client is ready, reuse it
+    if (this.authSig && this.litClient?.ready) {
       return this.authSig;
     }
 
-    if (!this.litClient) {
-      throw new Error('Lit Protocol not initialized');
-    }
+    const litClient = await this.ensureLitClientInitialized();
 
     try {
       const provider = new ethers.BrowserProvider(window.ethereum as unknown as Eip1193Provider);
@@ -45,9 +104,10 @@ export class TablelandClient {
       const address = await signer.getAddress();
       
       // Get the latest blockhash for nonce
-      const nonce = await this.litClient.getLatestBlockhash();
-      const network = await provider.getNetwork();
-      const chainId = Number(network.chainId);
+      const nonce = litClient.latestBlockhash || Date.now().toString();
+      
+      // Use Base Sepolia chain ID explicitly
+      const chainId = 84532; // Base Sepolia
 
       // Create SIWE message
       const domain = window.location.hostname;
@@ -67,21 +127,13 @@ export class TablelandClient {
       const messageToSign = siweMessage.prepareMessage();
       const signature = await signer.signMessage(messageToSign);
 
-      // Don't try to format the signature, let Lit Protocol handle it
+      // Store auth signature
       this.authSig = {
         sig: signature,
         derivedVia: "web3.eth.personal.sign",
         signedMessage: messageToSign,
         address: address.toLowerCase()
       };
-
-      // Log the full auth signature for debugging
-      console.log('[TablelandClient] Generated auth signature:', {
-        sigLength: signature.length,
-        sigType: typeof signature,
-        messageLength: messageToSign.length,
-        fullSig: signature
-      });
 
       return this.authSig;
     } catch (error) {
@@ -101,15 +153,6 @@ export class TablelandClient {
         signer,
       });
 
-      if (!this.litClient) {
-        this.litClient = new LitNodeClient({
-          litNetwork: LIT_NETWORK.DatilTest,
-          debug: true,
-          minNodeCount: 2,
-          checkNodeAttestation: false
-        });
-      }
-      await this.litClient.connect();
       console.log('[TablelandClient] Connected successfully');
     } catch (error) {
       console.error('[TablelandClient] Failed to connect:', error);
@@ -119,15 +162,19 @@ export class TablelandClient {
 
   async hasPurchasedDeck(deckId: string): Promise<boolean> {
     try {
-      await this.connect();
-      
+      if (!this.userAddress) {
+        await this.connect();
+      }
+
       if (!this.userAddress) {
         return false;
       }
 
       const provider = new ethers.BrowserProvider(window.ethereum as unknown as Eip1193Provider);
       const contract = new ethers.Contract(DECK_PURCHASE_ADDRESS, [
-        "function hasPurchased(address buyer, uint256 deckId) public view returns (bool)"
+        "function hasPurchased(address user, uint256 deckId) public view returns (bool)",
+        "function getDeckPrice(uint256 deckId) external view returns (uint256)",
+        "function purchaseDeck(uint256 deckId) external payable"
       ], provider);
 
       const result = await contract.hasPurchased(this.userAddress, deckId);
@@ -144,9 +191,14 @@ export class TablelandClient {
   }
 
   private async decryptDeckContent(deck: TablelandDeck, encryptedContent: string): Promise<string> {
-    if (!this.litClient || !this.userAddress) {
-      throw new Error('Lit Protocol not initialized');
+    await this.ensureLitClientInitialized();
+    
+    if (!this.userAddress) {
+      throw new Error('Not connected to wallet');
     }
+
+    // After ensureLitClientInitialized(), we know litClient is not null
+    const litClient = this.litClient!;
 
     try {
       console.log('[TablelandClient] Starting decryption process...', {
@@ -154,232 +206,143 @@ export class TablelandClient {
         hasEncryptionKey: !!deck.encryption_key,
         hasAccessConditions: !!deck.access_conditions,
         contentLength: encryptedContent?.length,
-        rawAccessConditions: deck.access_conditions,
-        rawEncryptionKey: deck.encryption_key
+        accessConditions: deck.access_conditions
       });
-      
-      // Parse access conditions if needed
-      let accessConditions;
+
+      // Get auth signature if we don't have one
+      if (!this.authSig) {
+        this.authSig = await this.getAuthSig();
+      }
+
+      // Handle access conditions - they might already be parsed
+      let accessControlConditions;
       try {
-        // Handle both string and object formats
-        if (typeof deck.access_conditions === 'string') {
-          try {
-            accessConditions = JSON.parse(deck.access_conditions);
-          } catch (e) {
-            console.error('[TablelandClient] Failed to parse access conditions string:', e);
-            throw e;
-          }
+        // Check if access_conditions is already an array
+        if (Array.isArray(deck.access_conditions)) {
+          accessControlConditions = deck.access_conditions;
         } else {
-          // If it's already an object/array, use it directly
-          accessConditions = deck.access_conditions;
+          // Try to parse if it's a string
+          accessControlConditions = JSON.parse(deck.access_conditions);
         }
-        
-        // Extract the inner accessControlConditions array
-        if (Array.isArray(accessConditions) && accessConditions[0]?.accessControlConditions) {
-          accessConditions = accessConditions[0].accessControlConditions;
-        } else if (accessConditions.accessControlConditions) {
-          accessConditions = accessConditions.accessControlConditions;
+
+        // Update the parameters array to use the current deck ID
+        if (accessControlConditions?.[0]?.accessControlConditions?.[0]) {
+          accessControlConditions[0].accessControlConditions[0].parameters = [deck.id.toString()];
         }
-        
-        // Create the correct access control conditions for Lit Protocol
-        accessConditions = [{
-          accessControlConditions: [{
-            contractAddress: DECK_PURCHASE_ADDRESS,
-            standardContractType: "",
-            chain: "baseSepolia",
-            method: "eth_call",
-            parameters: [
-              DECK_PURCHASE_ADDRESS,
-              `0x7506dfd0000000000000000000000000${this.userAddress?.toLowerCase().substring(2)}00000000000000000000000000000000000000000000000000000000000000${deck.id.toString().padStart(2, '0')}0000000000000000000000000000`
-            ],
-            returnValueTest: {
-              comparator: "=",
-              value: "0x0000000000000000000000000000000000000000000000000000000000000001"
-            }
-          }]
-        }];
-        
-        
-        console.log('[TablelandClient] Using access conditions:', JSON.stringify(accessConditions, null, 2));
-      } catch (parseError) {
-        console.error('[TablelandClient] Failed to parse access conditions:', {
-          error: String(parseError),
+
+        console.log('[TablelandClient] Access conditions:', {
+          raw: deck.access_conditions,
+          parsed: accessControlConditions,
+          type: typeof accessControlConditions,
+          isArray: Array.isArray(accessControlConditions),
+          hasAccessControlConditions: !!accessControlConditions?.[0]?.accessControlConditions,
+          firstCondition: accessControlConditions?.[0],
+          firstConditionDetails: {
+            chain: accessControlConditions?.[0]?.accessControlConditions?.[0]?.chain,
+            contractAddress: accessControlConditions?.[0]?.accessControlConditions?.[0]?.contractAddress,
+            standardContractType: accessControlConditions?.[0]?.accessControlConditions?.[0]?.standardContractType,
+            method: accessControlConditions?.[0]?.accessControlConditions?.[0]?.method,
+            parameters: accessControlConditions?.[0]?.accessControlConditions?.[0]?.parameters,
+            returnValueTest: accessControlConditions?.[0]?.accessControlConditions?.[0]?.returnValueTest,
+            fullCondition: JSON.stringify(accessControlConditions?.[0]?.accessControlConditions?.[0], null, 2)
+          }
+        });
+      } catch (e) {
+        console.error('[TablelandClient] Failed to process access conditions:', {
+          error: e,
           raw: deck.access_conditions,
           type: typeof deck.access_conditions
         });
-        throw parseError;
+        throw new Error('Invalid access conditions format');
       }
 
-      // Get auth signature
-      const authSig = await this.getAuthSig();
-      console.log('[TablelandClient] Got auth signature:', {
-        address: authSig.address,
-        signedMessage: authSig.signedMessage.substring(0, 50) + '...'
+      // Validate access conditions structure
+      if (!accessControlConditions?.[0]?.accessControlConditions) {
+        console.error('[TablelandClient] Invalid access conditions structure:', {
+          conditions: accessControlConditions,
+          firstItem: accessControlConditions?.[0]
+        });
+        throw new Error('Invalid access conditions structure');
+      }
+
+      // Get the chain from the access conditions
+      const chain = accessControlConditions[0].accessControlConditions[0]?.chain;
+      if (!chain) {
+        throw new Error('No chain specified in access conditions');
+      }
+
+      console.log('[TablelandClient] Using chain from access conditions:', chain);
+
+      const decryptConfig = {
+        accessControlConditions: accessControlConditions[0].accessControlConditions,
+        ciphertext: encryptedContent,
+        dataToEncryptHash: deck.encryption_key,
+        chain,
+        authSig: this.authSig
+      };
+
+      console.log('[TablelandClient] Attempting decryption with config:', {
+        accessControlConditions: decryptConfig.accessControlConditions,
+        authSig: {
+          address: this.authSig.address,
+          signedMessage: this.authSig.signedMessage,
+          sig: this.authSig.sig
+        },
+        encryptionKey: deck.encryption_key,
+        chain: decryptConfig.chain,
+        fullAccessConditions: JSON.stringify(accessControlConditions[0].accessControlConditions, null, 2)
       });
 
-      // Add retry logic for decryption
-      let retryCount = 0;
-      const maxRetries = 3;
-      let lastError;
-      let symmetricKey;
+      // Use the access conditions exactly as they are in the deck
+      const decryptedString = await decryptToString(decryptConfig, litClient);
 
-      while (retryCount < maxRetries) {
-        try {
-          console.log('[TablelandClient] Attempting decryption with config:', {
-            accessControlConditions: accessConditions,
-            authSig: {
-              sig: authSig.sig,
-              derivedVia: authSig.derivedVia,
-              signedMessage: authSig.signedMessage,
-              address: authSig.address,
-              sigType: typeof authSig.sig,
-              sigLength: authSig.sig.length,
-              isHexString: authSig.sig.startsWith('0x'),
-              hexLength: authSig.sig.startsWith('0x') ? (authSig.sig.length - 2) / 2 : authSig.sig.length / 2
-            },
-            encryptionKeyLength: deck.encryption_key.length,
-            encryptionKeyPreview: deck.encryption_key.substring(0, 50) + '...'
-          });
-
-          // Use the original signature without modification
-          // The ethers library already formats it correctly as a 65-byte signature
-          const sigBytes = ethers.getBytes(authSig.sig);
-          
-          console.log('[TablelandClient] Signature byte analysis:', {
-            originalSigLength: authSig.sig.length,
-            byteArrayLength: sigBytes.length,
-            r: sigBytes.slice(0, 32),
-            s: sigBytes.slice(32, 64),
-            v: sigBytes[64],
-            fullBytes: sigBytes
-          });
-          
-          symmetricKey = await decryptToString({
-            accessControlConditions: accessConditions[0].accessControlConditions,
-            ciphertext: deck.encryption_key,
-            dataToEncryptHash: deck.encryption_key,
-            chain: "baseSepolia",
-            authSig: {
-              sig: authSig.sig,
-              derivedVia: "web3.eth.personal.sign",
-              signedMessage: authSig.signedMessage,
-              address: authSig.address.toLowerCase()
-            }
-          }, this.litClient);
-          break; // If successful, exit the retry loop
-        } catch (error: any) {
-          lastError = error;
-          retryCount++;
-          console.warn(`[TablelandClient] Decrypt attempt ${retryCount} failed:`, {
-            error: String(error),
-            status: error.response?.status,
-            statusText: error.response?.statusText
-          });
-          if (retryCount < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-          }
-        }
-      }
-
-      if (!symmetricKey) {
-        throw new Error(`Failed to decrypt after ${maxRetries} attempts: ${lastError}`);
-      }
-
-      console.log('[TablelandClient] Got symmetric key:', {
-        keyType: typeof symmetricKey,
-        keyLength: symmetricKey?.length,
-        isString: typeof symmetricKey === 'string',
-        keyPreview: symmetricKey ? symmetricKey.substring(0, 32) + '...' : null
-      });
-
-      // Use symmetric key to decrypt the content
-      console.log('[TablelandClient] Decrypting content with symmetric key...', {
-        contentLength: encryptedContent.length,
-        contentPreview: encryptedContent.substring(0, 50) + '...'
-      });
-
-      // Reset retry counter for content decryption
-      retryCount = 0;
-      let decryptedString;
-
-      while (retryCount < maxRetries) {
-        try {
-          decryptedString = await decryptToString({
-            accessControlConditions: accessConditions[0].accessControlConditions,
-            ciphertext: encryptedContent,
-            dataToEncryptHash: encryptedContent,
-            chain: "baseSepolia",
-            authSig: {
-              sig: authSig.sig,
-              derivedVia: "web3.eth.personal.sign",
-              signedMessage: authSig.signedMessage,
-              address: authSig.address.toLowerCase()
-            }
-          }, this.litClient);
-          break; // If successful, exit the retry loop
-        } catch (error: any) {
-          lastError = error;
-          retryCount++;
-          console.warn(`[TablelandClient] Content decrypt attempt ${retryCount} failed:`, {
-            error: String(error),
-            status: error.response?.status,
-            statusText: error.response?.statusText
-          });
-          if (retryCount < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
-          }
-        }
-      }
-
-      if (!decryptedString) {
-        throw new Error(`Failed to decrypt content after ${maxRetries} attempts: ${lastError}`);
-      }
-
-      console.log('[TablelandClient] Successfully decrypted content:', {
+      // Log the decrypted content for debugging
+      console.log('[TablelandClient] Raw decrypted content:', {
         type: typeof decryptedString,
         length: decryptedString?.length,
-        preview: decryptedString?.substring(0, 100) + '...',
-        isValidJSON: (() => {
-          try {
-            JSON.parse(decryptedString);
-            return true;
-          } catch (e) {
-            return false;
-          }
-        })()
+        preview: decryptedString?.substring(0, 100),
+        isString: typeof decryptedString === 'string',
+        isObject: typeof decryptedString === 'object',
+        constructor: decryptedString?.constructor?.name
       });
 
-      // Validate JSON before returning
-      try {
-        JSON.parse(decryptedString); // Validate that it's valid JSON
-        return decryptedString;
-      } catch (error) {
-        console.error('[TablelandClient] Failed to parse decrypted content as JSON:', {
-          error: String(error),
-          contentType: typeof decryptedString,
-          contentLength: decryptedString?.length,
-          contentPreview: decryptedString?.substring(0, 100) + '...'
-        });
-        throw new Error('Decrypted content is not valid JSON');
+      // Handle case where decryptedString is an object
+      const contentToProcess = typeof decryptedString === 'object' ? 
+        JSON.stringify(decryptedString) : decryptedString;
+
+      // Validate that we got a string back
+      if (typeof contentToProcess !== 'string') {
+        throw new Error(`Decryption failed - invalid response type: ${typeof contentToProcess}`);
       }
+
+      // Validate that the string is not empty
+      if (!contentToProcess) {
+        throw new Error('Decryption failed - empty response');
+      }
+
+      // Try to parse as JSON to validate format
+      try {
+        JSON.parse(contentToProcess);
+      } catch (e) {
+        console.error('[TablelandClient] Invalid JSON in decrypted content:', {
+          error: e,
+          contentPreview: contentToProcess.substring(0, 200)
+        });
+        throw new Error('Decryption produced invalid JSON');
+      }
+
+      console.log('[TablelandClient] Successfully decrypted content');
+      return contentToProcess;
     } catch (error) {
-      console.error('[TablelandClient] Decryption error:', {
-        error: String(error),
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        accessConditions: deck.access_conditions,
-        encryptionKeyLength: deck.encryption_key?.length,
-        contentLength: encryptedContent?.length
-      });
+      console.error('[TablelandClient] Decryption error:', error);
       throw error;
     }
   }
 
   async tablelandToAppFlashcard(card: any): Promise<Flashcard> {
     return {
-      id: card.id.toString(),
-      deck_id: card.deck_id.toString(),
+      id: card.id?.toString() || '',
+      deck_id: card.deck_id?.toString() || '',
       front: card.front_text || '',
       back: card.back_text || '',
       front_language: card.front_language || 'eng',
@@ -418,13 +381,11 @@ export class TablelandClient {
       console.log('[TablelandClient] IPFS data:', {
         hasEncryptedContent: !!data.encrypted_content,
         encryptedContentLength: data.encrypted_content?.length,
-        hasEncryptionKey: !!data.encryption_key,
-        hasAccessConditions: !!data.access_conditions,
+        hasEncryptionKey: !!deck.encryption_key,
+        hasAccessConditions: !!deck.access_conditions,
         rawData: {
           keys: Object.keys(data),
-          encrypted_content_preview: data.encrypted_content?.substring(0, 50) + '...',
-          encryption_key_preview: data.encryption_key?.substring(0, 50) + '...',
-          access_conditions: data.access_conditions
+          encrypted_content_preview: data.encrypted_content?.substring(0, 50) + '...'
         }
       });
       
@@ -440,15 +401,25 @@ export class TablelandClient {
         ));
       }
 
+      // For paid decks, check if user has purchased it
+      const hasPurchased = await this.hasPurchasedDeck(deck.id.toString());
+      if (!hasPurchased) {
+        throw new Error('You need to purchase this deck to view its content');
+      }
+
+      // For paid decks, ensure Lit is initialized
+      await this.ensureLitClientInitialized();
+
       // For paid decks, decrypt the content
       console.log('[TablelandClient] Processing paid deck, attempting decryption...', {
         price: deck.price,
         hasEncryptedContent: !!data.encrypted_content,
-        contentLength: data.encrypted_content?.length
+        contentLength: data.encrypted_content?.length,
+        encryptionKey: deck.encryption_key
       });
       
       const decryptedContent = await this.decryptDeckContent(deck, data.encrypted_content);
-      console.log('[TablelandClient] Decrypted content type:', {
+      console.log('[TablelandClient] Decrypted content:', {
         type: typeof decryptedContent,
         length: decryptedContent?.length,
         preview: decryptedContent?.substring(0, 100) + '...'
@@ -459,60 +430,51 @@ export class TablelandClient {
         console.log('[TablelandClient] Parsed flashcards:', {
           hasFlashcards: !!flashcardsData.flashcards,
           flashcardsCount: flashcardsData.flashcards?.length,
-          firstCard: flashcardsData.flashcards?.[0] ? {
-            id: flashcardsData.flashcards[0].id,
-            front: flashcardsData.flashcards[0].front_text?.substring(0, 50),
-            back: flashcardsData.flashcards[0].back_text?.substring(0, 50)
-          } : null
+          firstCard: flashcardsData.flashcards?.[0]
         });
 
-        return Promise.all(flashcardsData.flashcards.map(async (card: any, index: number) => 
-          this.tablelandToAppFlashcard({
+        // Map the decrypted flashcards to our app format
+        return Promise.all(flashcardsData.flashcards.map(async (card: any, index: number) => {
+          const mappedCard = await this.tablelandToAppFlashcard({
             ...card,
             id: index + 1,
             deck_id: parseInt(deck.id)
-          })
-        ));
+          });
+          
+          console.log(`[TablelandClient] Mapped card ${index + 1}/${flashcardsData.flashcards.length}:`, {
+            original: card,
+            mapped: mappedCard
+          });
+          
+          return mappedCard;
+        }));
       } catch (parseError) {
-        console.error('[TablelandClient] Failed to parse decrypted content:', {
-          error: String(parseError),
-          contentType: typeof decryptedContent,
-          contentLength: decryptedContent?.length,
-          contentPreview: decryptedContent?.substring(0, 100) + '...',
-          isValidJSON: (() => {
-            try {
-              JSON.parse(decryptedContent);
-              return true;
-            } catch (e) {
-              return false;
-            }
-          })()
-        });
+        console.error('[TablelandClient] Failed to parse decrypted content:', parseError);
         throw parseError;
       }
     } catch (error) {
-      console.error('[TablelandClient] Failed to get deck flashcards:', {
-        error: String(error),
-        errorType: error instanceof Error ? error.constructor.name : typeof error,
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-        deckId: deck.id,
-        flashcardsCid: deck.flashcards_cid,
-        price: deck.price
-      });
+      console.error('[TablelandClient] Failed to get deck flashcards:', error);
       throw error;
     }
   }
 
   async getAllDecks(): Promise<TablelandDeck[]> {
-    await this.connect();
-    console.log('[TablelandClient] Getting all decks');
-    
-    const { results } = await this.db
-      .prepare(`SELECT * FROM ${DECKS_TABLE} ORDER BY id DESC`)
-      .all<TablelandDeck>();
+    try {
+      if (!this.userAddress) {
+        await this.connect();
+      }
 
-    return results;
+      console.log('[TablelandClient] Getting all decks');
+      
+      const { results } = await this.db
+        .prepare(`SELECT * FROM ${DECKS_TABLE} ORDER BY id DESC`)
+        .all<TablelandDeck>();
+
+      return results;
+    } catch (error) {
+      console.error('[TablelandClient] Failed to get all decks:', error);
+      throw error;
+    }
   }
 
   async getFlashcards(deckId: number): Promise<TablelandFlashcard[]> {
@@ -525,6 +487,10 @@ export class TablelandClient {
 
   async getDeck(deckId: number): Promise<TablelandDeck | null> {
     try {
+      if (!this.userAddress) {
+        await this.connect();
+      }
+
       const { results } = await this.db
         .prepare(`SELECT * FROM ${DECKS_TABLE} WHERE id = ?`)
         .bind(deckId)
@@ -536,7 +502,7 @@ export class TablelandClient {
     }
   }
 
-  async purchaseDeck(deckId: string, price: number, creatorAddress: string): Promise<void> {
+  async purchaseDeck(deckId: string): Promise<void> {
     try {
       await this.connect();
       
@@ -550,18 +516,25 @@ export class TablelandClient {
       // Create contract instance
       const contract = new ethers.Contract(
         DECK_PURCHASE_ADDRESS,
-        ["function purchaseDeck(uint256 deckId, address creator) external payable"],
+        [
+          "function getDeckPrice(uint256 deckId) external view returns (uint256)",
+          "function purchaseDeck(uint256 deckId) external payable"
+        ],
         signer
       );
 
-      // Convert price from our format (e.g. 7) to ETH (0.0007)
-      const priceInEth = price / 10000;
+      // Get the deck price (this will be in wei)
+      const price = await contract.getDeckPrice(deckId);
+      console.log('[TablelandClient] Got deck price:', {
+        deckId,
+        priceWei: price.toString(),
+        priceEth: ethers.formatEther(price)
+      });
       
-      // Send transaction
+      // Send transaction with exact price
       const tx = await contract.purchaseDeck(
         deckId,
-        creatorAddress,
-        { value: ethers.parseEther(priceInEth.toString()) }
+        { value: price }
       );
 
       // Wait for transaction to be mined
@@ -570,6 +543,59 @@ export class TablelandClient {
       console.log('[TablelandClient] Purchase successful');
     } catch (error) {
       console.error('[TablelandClient] Purchase failed:', error);
+      throw error;
+    }
+  }
+
+  async setDeckPrice(deckId: string, price: number, creator: string): Promise<void> {
+    try {
+      await this.connect();
+      
+      if (!this.userAddress) {
+        throw new Error('Not connected');
+      }
+
+      const provider = new ethers.BrowserProvider(window.ethereum as unknown as Eip1193Provider);
+      const signer = await provider.getSigner();
+      
+      // Create contract instance
+      const contract = new ethers.Contract(
+        DECK_PURCHASE_ADDRESS,
+        [
+          "function setDeckPrice(uint256 deckId, uint256 price, address creator) external",
+          "function owner() external view returns (address)"
+        ],
+        signer
+      );
+
+      // Check if caller is owner
+      const owner = await contract.owner();
+      if (owner.toLowerCase() !== this.userAddress.toLowerCase()) {
+        throw new Error('Only contract owner can set deck prices');
+      }
+
+      // Convert Tableland price (e.g. 7 for 0.0007 ETH) to wei
+      // 7 * 10^14 = 0.0007 ETH in wei
+      const priceInWei = ethers.getBigInt(price) * ethers.getBigInt(10 ** 14);
+      
+      console.log('[TablelandClient] Setting price:', {
+        deckId,
+        tablelandPrice: price,
+        priceInWei: priceInWei.toString(),
+        priceInEth: ethers.formatEther(priceInWei)
+      });
+      
+      // Set the price
+      const tx = await contract.setDeckPrice(deckId, priceInWei, creator);
+      await tx.wait();
+      
+      console.log('[TablelandClient] Price set successfully:', {
+        deckId,
+        price: priceInWei.toString(),
+        creator
+      });
+    } catch (error) {
+      console.error('[TablelandClient] Failed to set deck price:', error);
       throw error;
     }
   }

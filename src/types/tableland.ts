@@ -72,8 +72,8 @@ export const tablelandToAppFlashcard = (card: any): Flashcard => {
   return {
     id: card.id.toString(),
     deck_id: card.deck_id.toString(),
-    front: card.front_text || card.front_text_encrypted || '',
-    back: card.back_text || card.back_text_encrypted || '',
+    front: card.front || card.front_text || '',
+    back: card.back || card.back_text || '',
     front_language: card.front_language || 'eng',
     back_language: card.back_language || 'eng',
     sort_order: card.sort_order || 0,
@@ -88,5 +88,8 @@ export const tablelandToAppFlashcard = (card: any): Flashcard => {
     front_image_key: card.front_image_cid_key || null,
     back_image_key: card.back_image_cid_key || null,
     notes_key: card.notes_key || null,
+    // Add required timestamp fields
+    created_at: card.created_at || new Date().toISOString(),
+    updated_at: card.updated_at || new Date().toISOString(),
   };
 }; 
