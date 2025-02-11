@@ -5,6 +5,7 @@ import type { Eip1193Provider } from 'ethers';
 import * as LitJsSdk from "@lit-protocol/lit-node-client";
 import { TablelandClient } from '@/db/tableland';
 import { useLit } from './LitContext';
+import { useAppKitAccount } from '@reown/appkit/react';
 
 interface TablelandContextType {
   client: TablelandClient;
@@ -34,6 +35,7 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
   const [isLitConnecting, setIsLitConnecting] = useState(false);
   const client = useRef(new TablelandClient()).current;
   const { client: litClient, isConnected: isLitConnected } = useLit();
+  const { isConnected: isWalletConnected } = useAppKitAccount();
   const previousLitClientRef = useRef<typeof litClient | null>(null);
   const initializationAttemptRef = useRef(0);
 
@@ -42,9 +44,21 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
     const initTableland = async () => {
       try {
         console.log('[TablelandContext] Initializing Tableland...');
-        await client.connect();
+        // Initialize without requiring wallet connection
+        const database = new Database();
+        client.initializeDatabase(database);
         setIsInitialized(true);
         console.log('[TablelandContext] Tableland initialized successfully');
+
+        // Only attempt wallet connection if connected
+        if (isWalletConnected) {
+          try {
+            await client.connect();
+            console.log('[TablelandContext] Wallet connected to Tableland');
+          } catch (error) {
+            console.error('[TablelandContext] Failed to connect wallet to Tableland:', error);
+          }
+        }
       } catch (error) {
         console.error('[TablelandContext] Failed to initialize Tableland:', error);
         setIsInitialized(false);
@@ -54,15 +68,15 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
     if (!isInitialized) {
       initTableland();
     }
-  }, []);
+  }, [isWalletConnected, isInitialized, client]);
 
   // Handle Lit Protocol initialization and cleanup
   useEffect(() => {
     let mounted = true;
 
     const initLit = async () => {
-      // Prevent multiple simultaneous initialization attempts
-      if (isLitConnecting) {
+      // Skip if already initialized or connecting
+      if (isLitInitialized || isLitConnecting) {
         return;
       }
 
@@ -76,47 +90,28 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
           attempt: initializationAttemptRef.current
         });
 
-        // If we're disconnected, clean up and try to reconnect
-        if (!isLitConnected) {
-          if (previousLitClientRef.current) {
-            console.log('[TablelandContext] Cleaning up previous Lit client...');
-            try {
-              await previousLitClientRef.current.disconnect();
-              LitJsSdk.disconnectWeb3();
-            } catch (e) {
-              console.warn('[TablelandContext] Error during Lit disconnect:', e);
-            }
-          }
-          previousLitClientRef.current = null;
+        // If we have a client and it's ready, just mark as initialized
+        if (litClient?.ready) {
+          console.log('[TablelandContext] Lit client already ready');
           if (mounted) {
-            setIsLitInitialized(false);
-            client.setLitClient(null);
+            client.setLitClient(litClient);
+            setIsLitInitialized(true);
           }
-          
-          // Only attempt reconnection a limited number of times
-          if (initializationAttemptRef.current < 3) {
-            initializationAttemptRef.current++;
-            console.log('[TablelandContext] Attempting reconnection...');
-            return;
-          } else {
-            console.log('[TablelandContext] Max reconnection attempts reached');
-            return;
-          }
-        }
-
-        // Reset attempt counter on successful connection
-        initializationAttemptRef.current = 0;
-
-        // Skip if no client or already initialized with this client
-        if (!litClient || litClient === previousLitClientRef.current) {
           return;
         }
 
-        console.log('[TablelandContext] New Lit client detected, initializing...');
+        // Skip if no client
+        if (!litClient) {
+          console.log('[TablelandContext] No Lit client available');
+          return;
+        }
+
+        console.log('[TablelandContext] Initializing Lit client...');
         
         // Wait for client to be ready
         let attempts = 0;
-        while (!litClient.ready && attempts < 5) {
+        const maxAttempts = 10;
+        while (!litClient.ready && attempts < maxAttempts) {
           console.log('[TablelandContext] Waiting for Lit client to be ready...');
           await new Promise(resolve => setTimeout(resolve, 1000));
           attempts++;
@@ -152,7 +147,7 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
     return () => {
       mounted = false;
     };
-  }, [litClient, isLitConnected]);
+  }, [litClient, isLitConnected, isLitInitialized]);
 
   const purchaseDeck = async (deckId: string, price: number, creatorAddress: string) => {
     if (!isInitialized) {

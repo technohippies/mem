@@ -20,7 +20,9 @@ const AppContent: React.FC = () => {
               path="/decks/:id" 
               element={
                 <React.Suspense fallback={<div>Loading...</div>}>
-                  <DeckPage />
+                  <AuthWrapper>
+                    <DeckPage />
+                  </AuthWrapper>
                 </React.Suspense>
               } 
             />

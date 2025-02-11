@@ -25,6 +25,10 @@ export class TablelandClient {
     this.db = new Database();
   }
 
+  initializeDatabase(database: Database) {
+    this.db = database;
+  }
+
   setLitClient(client: ILitNodeClient | null) {
     // Only update if we're getting a new client or explicitly clearing
     if (client) {

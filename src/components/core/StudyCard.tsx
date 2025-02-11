@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import type { Flashcard } from '@/types/models';
 
 export interface StudyCardProps {
-  card: Flashcard;
+  card: Flashcard | null;
   onGrade: (grade: 1 | 3) => void;
   className?: string;
   visible?: boolean;
@@ -24,6 +24,15 @@ export const StudyCard = ({
     setIsFlipped(false);
   };
 
+  // If no card is provided, show a loading state
+  if (!card) {
+    return (
+      <div className={cn("flex flex-col h-full items-center justify-center", className)}>
+        <p className="text-neutral-400">Loading...</p>
+      </div>
+    );
+  }
+
   return (
     <div className={cn("flex flex-col h-full", className)}>
       <div className="flex-grow overflow-y-auto p-4">
@@ -32,7 +41,7 @@ export const StudyCard = ({
             <div className="flex flex-col gap-4 items-center">
               {card.back_image_cid && (
                 <img 
-                  src={card.back_image_cid} 
+                  src={`https://public.w3ipfs.storage/ipfs/${card.back_image_cid}`} 
                   alt="Back" 
                   className="w-48 h-48 rounded-lg object-cover"
                 />
@@ -43,14 +52,14 @@ export const StudyCard = ({
             <div className="flex flex-col gap-4 items-center">
               {card.front_image_cid && (
                 <img 
-                  src={card.front_image_cid} 
+                  src={`https://public.w3ipfs.storage/ipfs/${card.front_image_cid}`} 
                   alt="Front" 
                   className="w-48 h-48 rounded-lg object-cover"
                 />
               )}
               <p className="text-xl">{card.front}</p>
               {card.audio_tts_cid && (
-                <audio controls src={card.audio_tts_cid} className="mt-4" />
+                <audio controls src={`https://public.w3ipfs.storage/ipfs/${card.audio_tts_cid}`} className="mt-4" />
               )}
             </div>
           ))}

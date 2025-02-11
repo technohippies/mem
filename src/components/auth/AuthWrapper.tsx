@@ -10,7 +10,7 @@ const SYNC_REQUIRED_ROUTES = [
 ];
 
 export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isConnected, isInitializing, isCeramicConnected } = useAuthContext();
+  const { isConnected, isInitializing } = useAuthContext();
   const location = useLocation();
   const appKit = useAppKit();
   const { isConnected: isWalletConnected, address } = useAppKitAccount();
@@ -24,7 +24,6 @@ export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children 
     console.log('[AuthWrapper] State changed:', {
       isConnected,
       isInitializing,
-      isCeramicConnected,
       pathname: location.pathname,
       requiresSync,
       appKitMethods: Object.keys(appKit || {}),
@@ -32,7 +31,7 @@ export const AuthWrapper: React.FC<{ children: React.ReactNode }> = ({ children 
       walletConnected: isWalletConnected,
       walletAddress: address,
     });
-  }, [isConnected, isInitializing, isCeramicConnected, location.pathname, requiresSync, appKit, isWalletConnected, address]);
+  }, [isConnected, isInitializing, location.pathname, requiresSync, appKit, isWalletConnected, address]);
 
   if (isInitializing) {
     console.log('[AuthWrapper] Still initializing...');

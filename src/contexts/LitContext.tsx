@@ -1,8 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { LitNodeClient } from '@lit-protocol/lit-node-client';
 import type { ILitNodeClient } from '@lit-protocol/types';
-import { useAuthContext } from './AuthContext';
-import { LIT_NETWORKS } from '@lit-protocol/constants';
+import { useAppKitAccount } from '@reown/appkit/react';
 
 interface LitContextType {
   client: ILitNodeClient | null;
@@ -18,7 +17,7 @@ export const LitProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isInitialized, setIsInitialized] = useState(false);
   const clientRef = useRef<ILitNodeClient | null>(null);
   const connectingRef = useRef(false);
-  const { isConnected: isWalletConnected } = useAuthContext();
+  const { isConnected: isWalletConnected } = useAppKitAccount();
 
   const initClient = async () => {
     if (connectingRef.current) {
@@ -38,13 +37,28 @@ export const LitProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         });
       }
 
+      // Connect if not ready
       if (!clientRef.current.ready) {
+        console.log('[LitContext] Connecting to Lit Protocol...');
         await clientRef.current.connect();
+        
+        // Wait for client to be ready
+        let attempts = 0;
+        const maxAttempts = 10;
+        while (!clientRef.current.ready && attempts < maxAttempts) {
+          console.log('[LitContext] Waiting for client to be ready...');
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          attempts++;
+        }
+
+        if (!clientRef.current.ready) {
+          throw new Error('Lit client failed to become ready');
+        }
       }
 
       setIsConnected(true);
       setIsInitialized(true);
-      console.log('Connected to Lit Protocol');
+      console.log('[LitContext] Connected and ready');
     } catch (error) {
       console.error('[LitContext] Failed to initialize Lit Protocol:', error);
       setIsConnected(false);
@@ -86,17 +100,15 @@ export const LitProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (isWalletConnected && !isConnected) {
       connect();
-    } else if (!isWalletConnected && isConnected) {
-      // Disconnect logic
     }
   }, [isWalletConnected, isConnected]);
 
   return (
     <LitContext.Provider
       value={{
-        client: clientRef.current,
-        isConnected,
-        isInitialized,
+        client: clientRef.current?.ready ? clientRef.current : null,
+        isConnected: isConnected && !!clientRef.current?.ready,
+        isInitialized: isInitialized && !!clientRef.current?.ready,
         connect
       }}
     >
