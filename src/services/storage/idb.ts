@@ -249,16 +249,28 @@ export class IDBStorage {
         const cards = request.result.map(card => ({
           id: card.stream_id,
           deck_id: card.deck_id,
-          front: card.front_text,
-          back: card.back_text,
+          front: card.front,
+          back: card.back,
           front_image_cid: card.front_image_cid,
           back_image_cid: card.back_image_cid,
           audio_tts_cid: card.audio_tts_cid,
           sort_order: card.sort_order,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          language: card.language || 'en'
-        } as Flashcard));
+          created_at: card.created_at,
+          updated_at: card.updated_at,
+          notes: '',
+          front_language: 'en',
+          back_language: 'en',
+          front_text_key: '',
+          back_text_key: '',
+          front_audio_key: '',
+          back_audio_key: '',
+          stream_id: card.stream_id,
+          audio_tts_key: '',
+          front_image_key: '',
+          back_image_key: '',
+          notes_key: '',
+          severity: 0
+        } as unknown as Flashcard));
         resolve(cards);
       };
     });
@@ -603,15 +615,15 @@ export class IDBStorage {
 
       const cardData = {
         stream_id: card.id,
-        controller: '', // Not needed for offline storage
         deck_id: card.deck_id,
-        language: card.language,
-        front_text: card.front,
-        back_text: card.back,
+        front: card.front,
+        back: card.back,
+        front_image_cid: card.front_image_cid,
+        back_image_cid: card.back_image_cid,
+        audio_tts_cid: card.audio_tts_cid,
         sort_order: card.sort_order,
-        audio_tts_cid: card.audio_tts_cid || '',
-        back_image_cid: card.back_image_cid || '',
-        front_image_cid: card.front_image_cid || ''
+        created_at: card.created_at,
+        updated_at: card.updated_at
       };
 
       const request = store.put(cardData);

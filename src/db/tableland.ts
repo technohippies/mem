@@ -6,7 +6,7 @@ import type { ILitNodeClient } from '@lit-protocol/types';
 import { SiweMessage } from 'siwe';
 import type { Flashcard } from '@/types/models';
 import { decryptToString } from '@lit-protocol/encryption';
-import { CHAIN_CONFIG } from '@/config/networks';
+import { LitNodeClient } from '@lit-protocol/lit-node-client';
 
 // Table names - these are unique to your deployment
 export const DECKS_TABLE = 'decks_v5_84532_103';
@@ -15,18 +15,17 @@ export const DECKS_TABLE = 'decks_v5_84532_103';
 const DECK_PURCHASE_ADDRESS = "0xA26277f442eD2E41E70E4a06E3849807D972e4C3";
 
 export class TablelandClient {
-  private db: Database;
+  private database: Database | null = null;
   private userAddress: string | null = null;
   private authSig: any = null;
-  private litClient: ILitNodeClient | null = null;
-  private litClientInitialized: boolean = false;
+  private litClient: LitNodeClient | null = null;
 
   constructor() {
-    this.db = new Database();
+    this.database = new Database();
   }
 
   initializeDatabase(database: Database) {
-    this.db = database;
+    this.database = database;
   }
 
   setLitClient(client: ILitNodeClient | null) {
@@ -40,27 +39,23 @@ export class TablelandClient {
           console.log('[TablelandClient] Lit client connected successfully');
           // Only set the client if it's ready
           if (client.ready) {
-            this.litClient = client;
-            this.litClientInitialized = true;
+            this.litClient = client as LitNodeClient;
           }
         }).catch(err => {
           console.error('[TablelandClient] Failed to connect Lit client:', err);
           // Clear state on connection failure
           this.litClient = null;
-          this.litClientInitialized = false;
           this.authSig = null;
         });
       } else {
         // Client is already ready
         console.log('[TablelandClient] Lit client initialized and ready');
-        this.litClient = client;
-        this.litClientInitialized = true;
+        this.litClient = client as LitNodeClient;
       }
     } else if (this.litClient !== null) { // Only clear if we actually have a client
       // If we're clearing the client, just clean up our references
       console.log('[TablelandClient] Clearing Lit client state');
       this.litClient = null;
-      this.litClientInitialized = false;
       this.authSig = null;
     }
   }
@@ -79,13 +74,11 @@ export class TablelandClient {
         if (!this.litClient.ready) {
           throw new Error("Lit client failed to initialize properly");
         }
-        this.litClientInitialized = true;
         console.log('[TablelandClient] Lit client connected successfully');
       } catch (err) {
         console.error('[TablelandClient] Failed to connect Lit client:', err);
         // Clear state on connection failure
         this.litClient = null;
-        this.litClientInitialized = false;
         this.authSig = null;
         throw new Error("Failed to initialize Lit Protocol client. Please ensure you are connected to your wallet and try again.");
       }
@@ -153,7 +146,7 @@ export class TablelandClient {
       const signer = await provider.getSigner();
       this.userAddress = await signer.getAddress();
 
-      this.db = new Database({
+      this.database = new Database({
         signer,
       });
 
@@ -468,9 +461,17 @@ export class TablelandClient {
         await this.connect();
       }
 
+      if (!this.database) {
+        await this.connect();
+      }
+
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+
       console.log('[TablelandClient] Getting all decks');
       
-      const { results } = await this.db
+      const { results } = await this.database
         .prepare(`SELECT * FROM ${DECKS_TABLE} ORDER BY id DESC`)
         .all<TablelandDeck>();
 
@@ -495,7 +496,15 @@ export class TablelandClient {
         await this.connect();
       }
 
-      const { results } = await this.db
+      if (!this.database) {
+        await this.connect();
+      }
+
+      if (!this.database) {
+        throw new Error('Database not initialized');
+      }
+
+      const { results } = await this.database
         .prepare(`SELECT * FROM ${DECKS_TABLE} WHERE id = ?`)
         .bind(deckId)
         .all<TablelandDeck>();

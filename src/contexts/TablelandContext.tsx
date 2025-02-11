@@ -1,8 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
-import { Database, Validator } from '@tableland/sdk';
-import { ethers } from 'ethers';
-import type { Eip1193Provider } from 'ethers';
-import * as LitJsSdk from "@lit-protocol/lit-node-client";
+import { Database } from '@tableland/sdk';
 import { TablelandClient } from '@/db/tableland';
 import { useLit } from './LitContext';
 import { useAppKitAccount } from '@reown/appkit/react';
@@ -155,21 +152,10 @@ export const TablelandProvider = ({ children }: TablelandProviderProps) => {
     }
 
     try {
-      // 1. Get signer and connect to Tableland
-      const provider = new ethers.BrowserProvider(window.ethereum as unknown as Eip1193Provider);
-      const signer = await provider.getSigner();
-      const userAddress = await signer.getAddress();
-
-      // 2. Send payment to creator
-      const tx = await signer.sendTransaction({
-        to: creatorAddress,
-        value: ethers.parseEther((price/10000).toString())
-      });
-      await tx.wait();
-
-      console.log('[TablelandContext] Purchase successful');
+      await client.purchaseDeck(deckId);
+      console.log('[TablelandContext] Purchase successful:', { deckId, price, creatorAddress });
     } catch (error) {
-      console.error('[TablelandContext] Purchase failed:', error);
+      console.error('[TablelandContext] Purchase failed:', { deckId, error });
       throw error;
     }
   };

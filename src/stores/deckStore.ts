@@ -3,6 +3,7 @@ import type { Deck, Flashcard } from '@/types/models'
 import { IDBStorage } from '@/services/storage/idb'
 import { TablelandClient } from '@/db/tableland'
 import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland'
+import { useTableland } from '@/contexts/TablelandContext'
 
 export type LoadingState = 'initial' | 'loading' | 'ready' | 'error'
 
@@ -219,15 +220,25 @@ export const useDeckStore = create<DeckState>((set, get) => ({
 
   // Purchase flow
   purchaseDeck: async (deckId: string) => {
-    set({ loadingState: 'loading' })
+    set({ loadingState: 'loading' });
+    
     try {
-      // Implementation will come from TablelandClient
-      set({ hasPurchased: true, loadingState: 'ready' })
+      const tableland = useTableland();
+      await tableland.purchaseDeck(deckId, 0, ''); // Price and creator address will come from the deck query
+      
+      set({ 
+        loadingState: 'ready',
+        hasPurchased: true 
+      });
+      
+      console.log('[DeckStore] Purchase successful');
     } catch (error) {
+      console.error('[DeckStore] Purchase failed:', error);
       set({ 
         error: error as Error,
         loadingState: 'error'
-      })
+      });
+      throw error;
     }
   },
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
 import type { Deck } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';

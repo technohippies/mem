@@ -15,7 +15,7 @@ interface AuthState {
 }
 
 interface AuthContextValue extends AuthState {
-  connect: () => Promise<void>;
+  connect: (address?: string) => Promise<void>;
   disconnect: () => Promise<void>;
   connectCeramic: () => Promise<void>;
 }
@@ -39,9 +39,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     async function init() {
       try {
-        const storage = await IDBStorage.getInstance();
-        const persisted = await storage.getAuthState(AUTH_KEY);
-        
         if (mounted) {
           setState(current => ({
             ...current,
@@ -100,10 +97,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     persist();
   }, [state.isConnected, state.userAddress, state.isInitializing]);
 
-  const connect = async () => {
+  const connect = async (address?: string) => {
     try {
       if (!isWalletConnected) {
         await appKit?.open();
+      }
+      
+      if (address) {
+        setState(current => ({
+          ...current,
+          isConnected: true,
+          userAddress: address.toLowerCase()
+        }));
       }
     } catch (error) {
       console.error('[Auth] Connection failed:', error);
