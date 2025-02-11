@@ -26,6 +26,7 @@ export interface Deck {
   is_public: boolean;
   forked_from?: string;
   last_sync?: string;
+  creator: string; // Ethereum address of the deck creator
 }
 
 // Flashcard types
@@ -35,12 +36,21 @@ export interface Flashcard {
   front: string;
   back: string;
   sort_order: number;
+  audio_tts_cid: string | null;
+  front_image_cid: string | null;
+  back_image_cid: string | null;
+  notes: string | null;
+  front_language: string;
+  back_language: string;
+  // Encryption keys
+  front_text_key: string | null;
+  back_text_key: string | null;
+  audio_tts_key: string | null;
+  front_image_key: string | null;
+  back_image_key: string | null;
+  notes_key: string | null;
   created_at: string;
   updated_at: string;
-  language: string;
-  audio_tts_cid?: string;
-  back_image_cid?: string;
-  front_image_cid?: string;
 }
 
 // Study session types

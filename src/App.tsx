@@ -3,20 +3,21 @@ import { BrowserRouter } from 'react-router-dom';
 import AppContent from './AppContent';
 import { createAppKit, useAppKitProvider } from '@reown/appkit/react';
 import { WagmiAdapter } from '@reown/appkit-adapter-wagmi';
-import { mainnet, optimism } from '@reown/appkit/networks';
+import { mainnet, optimism, baseSepolia } from '@reown/appkit/networks';
 import { AuthProvider } from './contexts/AuthContext';
 import { TablelandProvider } from './contexts/TablelandContext';
+import { LitProvider } from './contexts/LitContext';
 
 // Initialize AppKit
 createAppKit({
   adapters: [
     new WagmiAdapter({
-      networks: [mainnet, optimism],
+      networks: [mainnet, optimism, baseSepolia],
       projectId: 'anki-farcaster'
     })
   ],
   projectId: 'anki-farcaster',
-  networks: [mainnet, optimism],
+  networks: [mainnet, optimism, baseSepolia],
   metadata: {
     name: 'Mem',
     description: 'Spaced repetition learning with Farcaster',
@@ -49,9 +50,11 @@ const App: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <TablelandProvider>
-          <AppContent />
-        </TablelandProvider>
+        <LitProvider>
+          <TablelandProvider>
+            <AppContent />
+          </TablelandProvider>
+        </LitProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -8,15 +8,14 @@ import { CaretLeft, Play } from '@phosphor-icons/react';
 import { IconButton } from '@/components/ui/button/IconButton';
 import { useTableland } from '@/contexts/TablelandContext';
 import { tablelandToAppDeck, tablelandToAppFlashcard } from '@/types/tableland';
-import { Skeleton } from '@/components/ui/skeleton/Skeleton';
 
-const getDeckByStreamId = async (streamId: string, tablelandClient: any): Promise<Deck> => {
-  console.log('[DeckPage] Fetching deck:', streamId);
+const getDeckById = async (deckId: string, tablelandClient: any): Promise<Deck> => {
+  console.log('[DeckPage] Fetching deck:', deckId);
   
   // First try to get deck from IDB
   const storage = await IDBStorage.getInstance();
   const decks = await storage.getAllDecks();
-  const localDeck = decks.find(d => d.id === streamId);
+  const localDeck = decks.find(d => d.id === deckId);
   
   if (localDeck) {
     console.log('[DeckPage] Found deck in IDB:', localDeck);
@@ -26,13 +25,18 @@ const getDeckByStreamId = async (streamId: string, tablelandClient: any): Promis
   // If not in IDB, fetch from Tableland
   console.log('[DeckPage] Deck not found in IDB, fetching from Tableland');
   try {
-    const tablelandDeck = await tablelandClient.getDeck(parseInt(streamId));
+    const tablelandDeck = await tablelandClient.getDeck(parseInt(deckId));
     if (!tablelandDeck) {
       throw new Error('Deck not found');
     }
 
     const deck = tablelandToAppDeck(tablelandDeck);
-    console.log('[DeckPage] Fetched deck from Tableland:', deck);
+    console.log('[DeckPage] Fetched deck from Tableland:', {
+      id: deck.id,
+      name: deck.name,
+      creator: deck.creator,
+      price: deck.price
+    });
     
     return deck;
   } catch (error) {
@@ -49,14 +53,38 @@ const getFlashcards = async (deckId: string, tablelandClient: any): Promise<Flas
     // Always try Tableland first to ensure we have the latest data
     console.log('[DeckPage] Fetching from Tableland...');
     const tablelandCards = await tablelandClient.getFlashcards(parseInt(deckId));
-    console.log('[DeckPage] Raw Tableland cards:', JSON.stringify(tablelandCards, null, 2));
+    console.log('[DeckPage] Raw Tableland cards:', {
+      type: typeof tablelandCards,
+      isArray: Array.isArray(tablelandCards),
+      length: tablelandCards?.length,
+      firstCard: tablelandCards?.[0] ? {
+        id: tablelandCards[0].id,
+        front: tablelandCards[0].front_text?.substring(0, 50),
+        back: tablelandCards[0].back_text?.substring(0, 50)
+      } : null
+    });
     
     if (!Array.isArray(tablelandCards) || tablelandCards.length === 0) {
+      console.warn('[DeckPage] No cards found in Tableland, response:', {
+        type: typeof tablelandCards,
+        value: tablelandCards
+      });
       throw new Error('No cards found in Tableland');
     }
 
+    // Decrypt cards if needed
+    const decryptedCards = await Promise.all(
+      tablelandCards.map(async (card) => {
+        if (card.front_text_encrypted || card.back_text_encrypted || card.notes_encrypted) {
+          console.log('[DeckPage] Decrypting card:', card.id);
+          return await tablelandClient.decryptCard(card);
+        }
+        return card;
+      })
+    );
+
     // Convert to app format
-    const cards = tablelandCards.map((card, index) => {
+    const cards = decryptedCards.map((card, index) => {
       const mappedCard = tablelandToAppFlashcard({
         ...card,
         id: card.id || index + 1, // Ensure we have an ID
@@ -113,7 +141,7 @@ const getIpfsUrl = (cid: string) => {
 };
 
 export const DeckPage = () => {
-  const { stream_id } = useParams<{ stream_id: string }>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [deck, setDeck] = useState<Deck | null>(null);
   const [cards, setCards] = useState<Flashcard[]>([]);
@@ -121,6 +149,7 @@ export const DeckPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [hasStudiedToday, setHasStudiedToday] = useState(false);
   const [hasUnfinishedSession, setHasUnfinishedSession] = useState(false);
+  const [hasPurchased, setHasPurchased] = useState(false);
   const [cardStats, setCardStats] = useState({
     newCount: 0,
     reviewCount: 0,
@@ -128,11 +157,33 @@ export const DeckPage = () => {
   });
   const { client: tablelandClient } = useTableland();
 
+  // Check if user has purchased the deck
   useEffect(() => {
+    const checkPurchaseStatus = async () => {
+      if (deck?.id) {
+        try {
+          const purchased = await tablelandClient.hasPurchasedDeck(deck.id);
+          setHasPurchased(purchased);
+        } catch (error) {
+          console.error('Failed to check purchase status:', error);
+          // Fallback to localStorage check
+          const accessData = localStorage.getItem(`deck-${deck.id}-access`);
+          setHasPurchased(!!accessData);
+        }
+      }
+    };
+
+    checkPurchaseStatus();
+  }, [deck?.id, tablelandClient]);
+
+  useEffect(() => {
+    console.log('[DeckPage] Route param id:', id);
+    
     const loadDeck = async () => {
       try {
-        if (!stream_id) throw new Error('No deck stream_id provided');
-        const deckData = await getDeckByStreamId(stream_id, tablelandClient);
+        if (!id) throw new Error('No deck ID provided');
+        console.log('[DeckPage] Loading deck with ID:', id);
+        const deckData = await getDeckById(id, tablelandClient);
         console.log('[DeckPage] Loaded deck data:', deckData);
         console.log('[DeckPage] Sync status:', {
           last_sync: deckData.last_sync,
@@ -166,12 +217,12 @@ export const DeckPage = () => {
             : 'Never'
         });
         setDeck(deckData);
-        const cardsData = await getFlashcards(stream_id, tablelandClient);
+        const cardsData = await getFlashcards(id, tablelandClient);
         setCards(cardsData);
 
         // Check if user has studied today
         const storage = await IDBStorage.getInstance();
-        const studied = await storage.hasStudiedToday('user', stream_id);
+        const studied = await storage.hasStudiedToday('user', id);
         setHasStudiedToday(studied);
 
         // Calculate card stats
@@ -182,7 +233,7 @@ export const DeckPage = () => {
         console.log('Total cards:', cardsData.length);
         
         // Get cards studied today
-        const studiedToday = await storage.getCardsStudiedToday('user', stream_id);
+        const studiedToday = await storage.getCardsStudiedToday('user', id);
         console.log('Cards studied today:', studiedToday);
         
         // In a regular study session, all cards are new cards (we don't mix new and review cards)
@@ -207,7 +258,7 @@ export const DeckPage = () => {
         });
 
         // Check for unfinished session
-        const lastStudiedIndex = await storage.getLastStudiedIndex('user', stream_id);
+        const lastStudiedIndex = await storage.getLastStudiedIndex('user', id);
         const hasUnfinished = lastStudiedIndex > 0 && 
           newCardsStudiedToday < 20 &&  // If we've hit our daily limit, we're not "unfinished"
           (newCards.length > 0 || dueCards.length > 0);  // And we have cards to study
@@ -249,7 +300,7 @@ export const DeckPage = () => {
     };
 
     loadDeck();
-  }, [stream_id, tablelandClient]);
+  }, [id, tablelandClient]);
 
   if (loading) {
     return (
@@ -267,6 +318,8 @@ export const DeckPage = () => {
       </div>
     );
   }
+
+  const isPaidDeck = deck.price > 0 && !hasPurchased;
 
   return (
     <div className="flex flex-col min-h-screen">
@@ -319,44 +372,35 @@ export const DeckPage = () => {
             <p className="text-neutral-400">{deck.description}</p>
           </div>
 
-          {/* Card Stats */}
-          <div className="grid grid-cols-3 gap-4 mt-4">
-            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-              <span className="text-neutral-500 text-sm">New</span>
-              <span className="text-2xl font-bold mt-1">{cardStats.newCount}</span>
+          {/* Only show stats for free decks */}
+          {!isPaidDeck && (
+            <div className="grid grid-cols-3 gap-4 mt-4">
+              <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+                <span className="text-neutral-500 text-sm">New</span>
+                <span className="text-2xl font-bold mt-1">{cardStats.newCount}</span>
+              </div>
+              <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+                <span className="text-neutral-500 text-sm">Review</span>
+                <span className="text-2xl font-bold mt-1">{cardStats.reviewCount}</span>
+              </div>
+              <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
+                <span className="text-neutral-500 text-sm">Due</span>
+                <span className="text-2xl font-bold mt-1">{cardStats.dueCount}</span>
+              </div>
             </div>
-            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-              <span className="text-neutral-500 text-sm">Review</span>
-              <span className="text-2xl font-bold mt-1">{cardStats.reviewCount}</span>
-            </div>
-            <div className="bg-neutral-800/50 rounded-lg p-4 flex flex-col">
-              <span className="text-neutral-500 text-sm">Due</span>
-              <span className="text-2xl font-bold mt-1">{cardStats.dueCount}</span>
-            </div>
-          </div>
+          )}
         </div>
 
         {/* Cards List */}
         <div className="flex-1 mt-8">
           <h2 className="text-xl font-semibold mb-4">Cards ({cards.length})</h2>
-          <div className="flex flex-col gap-2">
-            {loading ? (
-              // Skeleton loading state
-              Array.from({ length: 3 }).map((_, index) => (
-                <div key={`skeleton-${index}`} className="p-4 bg-neutral-800/50 rounded-lg flex gap-4 min-h-[4rem]">
-                  <div className="flex-1 flex flex-col justify-center gap-1">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-4 w-1/2" />
-                  </div>
-                </div>
-              ))
-            ) : (
-              cards.map((card, index) => (
+          {!isPaidDeck ? (
+            <div className="flex flex-col gap-2">
+              {cards.map((card, index) => (
                 <div 
                   key={`${card.id || 'card'}-${index}`}
                   className="px-4 py-3 bg-neutral-800/50 rounded-lg flex gap-4 min-h-[3.5rem]"
                 >
-                  {/* Image (only if exists) */}
                   {card.front_image_cid && (
                     <img 
                       src={getIpfsUrl(card.front_image_cid)} 
@@ -365,13 +409,11 @@ export const DeckPage = () => {
                     />
                   )}
 
-                  {/* Text Content */}
                   <div className="flex-1 flex flex-col justify-center">
                     <p className="font-medium leading-snug line-clamp-1">{card.front}</p>
                     <p className="text-neutral-400 leading-snug line-clamp-1">{card.back}</p>
                   </div>
 
-                  {/* Audio Button */}
                   {card.audio_tts_cid && (
                     <button 
                       className="pr-4 hover:text-neutral-200 transition-colors self-center flex-shrink-0"
@@ -387,68 +429,74 @@ export const DeckPage = () => {
                     </button>
                   )}
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-neutral-400 py-8">
+              Purchase this deck to access the flashcards
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Study Button */}
+      {/* Action Button */}
       <div className="sticky bottom-0 p-4 bg-neutral-900 border-t border-neutral-800">
         <div className="max-w-3xl mx-auto w-full px-4">
-          <Button 
-            variant="secondary"
-            className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
-            onClick={async () => {
-              if (!deck || cards.length === 0) {
-                console.warn('[DeckPage] Cannot start study: no deck or cards');
-                return;
-              }
+          {isPaidDeck ? (
+            <Button 
+              variant="secondary"
+              className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+              onClick={async () => {
+                try {
+                  console.log('[DeckPage] Attempting purchase:', {
+                    deckId: deck.id,
+                    price: deck.price,
+                    creator: deck.creator
+                  });
+                  await tablelandClient.purchaseDeck(deck.id, deck.price, deck.creator);
+                  setHasPurchased(true);
+                  // After successful purchase, reload the page to show the flashcards
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Purchase failed:', error);
+                  // TODO: Show error toast
+                }
+              }}
+            >
+              Purchase ({deck.price/10000} ETH)
+            </Button>
+          ) : (
+            <Button 
+              variant="secondary"
+              className="w-full py-6 bg-blue-500 hover:bg-blue-600 text-white"
+              onClick={async () => {
+                if (!deck || cards.length === 0) {
+                  console.warn('[DeckPage] Cannot start study: no deck or cards');
+                  return;
+                }
 
-              try {
-                const storage = await IDBStorage.getInstance();
-                console.log('[DeckPage] Preparing to store deck and cards:', {
-                  deckId: deck.id,
-                  cardCount: cards.length
-                });
-                
-                // Store deck
-                await storage.storeDeck(deck);
-                console.log('[DeckPage] Deck stored successfully');
-                
-                // Store cards with verification
-                console.log('[DeckPage] Storing cards:', cards);
-                for (const card of cards) {
-                  const cardToStore = {
-                    ...card,
-                    id: card.id.toString(),
-                    deck_id: deck.id.toString()
-                  };
-                  await storage.storeCard(cardToStore);
-                  console.log(`[DeckPage] Stored card: ${cardToStore.id}`);
+                try {
+                  const storage = await IDBStorage.getInstance();
+                  await storage.storeDeck(deck);
+                  
+                  for (const card of cards) {
+                    const cardToStore = {
+                      ...card,
+                      id: card.id.toString(),
+                      deck_id: deck.id.toString()
+                    };
+                    await storage.storeCard(cardToStore);
+                  }
+                  
+                  navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
+                } catch (error) {
+                  console.error('[DeckPage] Failed to store deck/cards:', error);
                 }
-                
-                // Verify storage
-                const storedCards = await storage.getCardsForDeck(deck.id);
-                console.log('[DeckPage] Verified stored cards:', {
-                  expected: cards.length,
-                  actual: storedCards.length
-                });
-                
-                if (storedCards.length !== cards.length) {
-                  throw new Error(`Storage verification failed: expected ${cards.length} cards but found ${storedCards.length}`);
-                }
-                
-                console.log('[DeckPage] Successfully stored deck and cards in IDB');
-                navigate(`/study/${deck.id}${hasStudiedToday ? '?mode=extra' : ''}`);
-              } catch (error) {
-                console.error('[DeckPage] Failed to store deck/cards:', error);
-                // TODO: Show error toast to user
-              }
-            }}
-          >
-            {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}
-          </Button>
+              }}
+            >
+              {hasUnfinishedSession ? 'Continue Studying' : hasStudiedToday ? 'Study Again' : 'Study'}
+            </Button>
+          )}
         </div>
       </div>
     </div>

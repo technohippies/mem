@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button/Button';
 import type { Deck } from '@/types/models';
 import { IDBStorage } from '@/services/storage/idb';
@@ -9,10 +9,10 @@ import { CloudSlash } from '@phosphor-icons/react';
 import { useTableland } from '@/contexts/TablelandContext';
 import { tablelandToAppDeck, type TablelandDeck } from '@/types/tableland';
 
-const getAvailableDecks = async (tablelandClient: { getPublicDecks: () => Promise<TablelandDeck[]> }): Promise<Deck[]> => {
+const getAvailableDecks = async (tablelandClient: { getAllDecks: () => Promise<TablelandDeck[]> }): Promise<Deck[]> => {
   console.log('Fetching decks from Tableland...');
   try {
-    const tablelandDecks = await tablelandClient.getPublicDecks();
+    const tablelandDecks = await tablelandClient.getAllDecks();
     console.log('Got decks from Tableland:', tablelandDecks);
     return tablelandDecks.map(tablelandToAppDeck);
   } catch (error) {
@@ -24,77 +24,24 @@ const getAvailableDecks = async (tablelandClient: { getPublicDecks: () => Promis
   }
 };
 
-const DeckCard = ({ deck, compact = false }: { deck: Deck; compact?: boolean }) => {
-  const [cardStats, setCardStats] = useState({
-    newCount: 0,
-    reviewCount: 0,
-    dueCount: 0,
-  });
-
-  useEffect(() => {
-    const loadCardStats = async () => {
-      // Only load stats for user's decks (compact=true)
-      if (!compact) return;
-      
-      try {
-        const storage = await IDBStorage.getInstance();
-        const cards = await storage.getCardsForDeck(deck.id);
-        const cardProgressPromises = cards.map(card => storage.getCardProgress(card.id, 'user'));
-        const cardProgresses = await Promise.all(cardProgressPromises);
-        const studiedToday = await storage.getCardsStudiedToday('user', deck.id);
-        
-        const newCards = cards.filter((_, index) => !cardProgresses[index]);
-        const reviewCards = cards.filter(card => 
-          studiedToday.includes(card.id)
-        );
-        const dueCards = cards.filter((card, index) => {
-          const progress = cardProgresses[index];
-          const isStudiedToday = studiedToday.includes(card.id);
-          return progress && !isStudiedToday && progress.review_date && new Date(progress.review_date) <= new Date();
-        });
-
-        setCardStats({
-          newCount: newCards.length,
-          reviewCount: reviewCards.length,
-          dueCount: dueCards.length,
-        });
-      } catch (err) {
-        console.error('Failed to load card stats:', err);
-      }
-    };
-
-    loadCardStats();
-  }, [deck.id, compact]);
-
+const DeckCard = ({ deck }: { deck: Deck }) => {
   return (
     <Link 
-      key={deck.id} 
       to={`/decks/${deck.id}`}
-      className="w-full"
+      className="relative flex flex-col justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-900/50 hover:bg-neutral-900 transition-colors cursor-pointer"
     >
-      <div className="w-full p-4 rounded-lg bg-neutral-600/40 hover:bg-neutral-500/40 border border-neutral-600 hover:border-neutral-500 shadow-sm hover:shadow-md transition-all flex gap-4 items-start cursor-pointer">
-        {deck.image_hash && (
-          <img 
-            src={deck.image_hash} 
-            alt={deck.name}
-            className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
-          />
-        )}
-        <div className="flex-1 flex flex-col gap-2 text-left">
-          <div className="flex justify-between items-center">
-            <span className="font-semibold text-neutral-200">{deck.name}</span>
-            {compact && (
-              <div className="flex gap-2 text-sm items-center">
-                <span className="text-blue-400">{cardStats.newCount}</span>
-                <span className="text-neutral-400">{cardStats.reviewCount}</span>
-                <span className="text-red-400">{cardStats.dueCount}</span>
-              </div>
-            )}
-          </div>
-          {!compact && deck.description && (
-            <span className="text-sm text-neutral-400">{deck.description}</span>
-          )}
+      <div>
+        <div className="flex items-start justify-between gap-2 mb-2">
+          <h3 className="font-semibold text-lg">{deck.name}</h3>
+          <span className="text-sm text-neutral-400">
+            {deck.price > 0 ? `${deck.price/10000} ETH` : 'Free'}
+          </span>
         </div>
+        <p className="text-sm text-neutral-400 mb-4">{deck.description}</p>
+      </div>
+      <div className="flex items-center gap-2 text-sm text-neutral-500">
+        <span>{deck.category}</span>
+        <span>{deck.language.toUpperCase()}</span>
       </div>
     </Link>
   );
@@ -187,7 +134,7 @@ export const HomePage = () => {
         ) : (
           <div className="flex flex-col gap-2">
             {userDecks.map((deck) => (
-              <DeckCard key={deck.id} deck={deck} compact={true} />
+              <DeckCard key={deck.id} deck={deck} />
             ))}
           </div>
         )}
@@ -220,7 +167,7 @@ export const HomePage = () => {
         ) : (
           <div className="flex flex-col gap-2">
             {availableDecks.map((deck) => (
-              <DeckCard key={deck.id} deck={deck} compact={false} />
+              <DeckCard key={deck.id} deck={deck} />
             ))}
             {availableDecks.length === 0 && isOffline && (
               <p className="text-neutral-400">Connect to the internet to browse available decks.</p>

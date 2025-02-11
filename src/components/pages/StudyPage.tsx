@@ -17,7 +17,7 @@ import { PROGRESS_MODEL, CONTEXT_ID } from '@/db/orbis';
 import { db } from '@/db/orbis';
 
 export const StudyPage = () => {
-  const { stream_id } = useParams<{ stream_id: string }>();
+  const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [isInitialized, setIsInitialized] = useState(false);
@@ -32,7 +32,7 @@ export const StudyPage = () => {
     isLoading,
     onGrade,
     reloadSession 
-  } = useStudySession(stream_id || '', isInitialized, searchParams.get('mode') === 'extra');
+  } = useStudySession(id || '', isInitialized, searchParams.get('mode') === 'extra');
   const { toast } = useToast();
   const { isConnected, isCeramicConnected, userAddress, connectCeramic, connect } = useAuthContext();
   const appKit = useAppKit();
@@ -55,7 +55,7 @@ export const StudyPage = () => {
     const RETRY_DELAY = 200;
 
     const initCards = async () => {
-      if (!stream_id) return;
+      if (!id) return;
 
       try {
         // Wait a bit to ensure storage is ready
@@ -65,13 +65,13 @@ export const StudyPage = () => {
         if (!mounted) return;
 
         // Check if we have cards in storage
-        const existingCards = await storage.getCardsForDeck(stream_id);
+        const existingCards = await storage.getCardsForDeck(id);
         if (!mounted) return;
 
         if (existingCards.length === 0) {
           // First, fetch and store the deck
           console.log('[StudyPage] Fetching deck from Tableland...');
-          const tablelandDeck = await tablelandClient.getDeck(parseInt(stream_id));
+          const tablelandDeck = await tablelandClient.getDeck(parseInt(id));
           if (!tablelandDeck) {
             throw new Error('Deck not found');
           }
@@ -82,7 +82,7 @@ export const StudyPage = () => {
 
           // Then fetch and store cards
           console.log('[StudyPage] No cards in storage, fetching from Tableland...');
-          const tablelandCards = await tablelandClient.getFlashcards(parseInt(stream_id));
+          const tablelandCards = await tablelandClient.getFlashcards(parseInt(id));
           const cardsToStore = tablelandCards.map(tablelandToAppFlashcard);
           
           console.log(`[StudyPage] Storing ${cardsToStore.length} cards in storage...`);
@@ -115,7 +115,7 @@ export const StudyPage = () => {
 
     initCards();
     return () => { mounted = false; };
-  }, [stream_id, tablelandClient, reloadSession]);
+  }, [id, tablelandClient, reloadSession]);
 
   const handleCeramicConnect = async () => {
     if (!isWalletConnected || !address) {
@@ -153,7 +153,7 @@ export const StudyPage = () => {
   };
 
   const handleSync = async () => {
-    if (!stream_id) {
+    if (!id) {
       toast({
         title: "Error",
         description: "No deck loaded",
@@ -191,11 +191,11 @@ export const StudyPage = () => {
 
     try {
       const storage = await IDBStorage.getInstance();
-      const cards = await storage.getCardsForDeck(stream_id);
+      const cards = await storage.getCardsForDeck(id);
       console.log('Syncing progress for cards:', cards);
 
-      // Use the stream_id directly as the deck_id
-      const deckId = stream_id;
+      // Use the id directly as the deck_id
+      const deckId = id;
       console.log('Using deck_id:', deckId);
 
       // Get existing progress from Orbis
@@ -301,7 +301,7 @@ export const StudyPage = () => {
       }
 
       // Update last sync time
-      await storage.updateDeckLastSync(stream_id);
+      await storage.updateDeckLastSync(id);
       
       toast({
         title: "Success",
@@ -320,7 +320,7 @@ export const StudyPage = () => {
     }
   };
 
-  if (!stream_id) {
+  if (!id) {
     return <div>Invalid deck ID</div>;
   }
 

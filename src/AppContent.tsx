@@ -16,8 +16,15 @@ const AppContent: React.FC = () => {
         <main className="flex-1">
           <Routes>
             <Route path="/" element={<HomePage />} />
-            <Route path="/decks/:stream_id" element={<DeckPage />} />
-            <Route path="/study/:stream_id" element={
+            <Route 
+              path="/decks/:id" 
+              element={
+                <React.Suspense fallback={<div>Loading...</div>}>
+                  <DeckPage />
+                </React.Suspense>
+              } 
+            />
+            <Route path="/study/:id" element={
               <AuthWrapper>
                 <StudyPage />
               </AuthWrapper>
